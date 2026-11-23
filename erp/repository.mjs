@@ -428,6 +428,34 @@ export function createDemoRepository(original, imported, storage=globalThis.loca
   };
   return api;
 }
+export function dashboardSnapshot(state) {
+  const scope=state.branches.find(branch=>branch.id===state.profile?.branch_id)?.id;
+  const branches=scope?state.branches.filter(branch=>branch.id===scope):state.branches;
+  const products=state.products.filter(product=>product.status!=='archived');
+  const visible=row=>!scope||row.branch_id===scope;
+  const scoped={
+    ...state,branches,products:products.map(product=>{
+      const onHand=branches.reduce((quantity,branch)=>quantity+knownStock(state,product.id,branch.id),0);
+      const reserved=(!scope||scope===state.branches[0]?.id)?asNumber(product.reserved):0;
+      return {...product,on_hand:onHand,available:Math.max(0,onHand-reserved)};
+    }),
+  };
+  for(const key of ['invoices','orders','quotations','purchases']) scoped[key]=state[key].filter(visible);
+  const branchRows=branches.map(branch=>{
+    const invoices=state.invoices.filter(row=>row.branch_id===branch.id&&!['draft','cancelled'].includes(row.status));
+    const purchases=state.purchases.filter(row=>row.branch_id===branch.id&&!['draft','cancelled'].includes(row.status));
+    return {
+      id:branch.id,name:branch.name,
+      stockedItems:products.filter(product=>knownStock(state,product.id,branch.id)>0).length,
+      invoiceCount:invoices.length,invoiced:sum(invoices,'total'),
+      receivables:money(invoices.reduce((total,row)=>total+invoiceBalance(row),0)),
+      payables:money(purchases.reduce((total,row)=>total+purchaseBalance(row),0)),
+      incomingTransfers:state.transfers.filter(row=>row.to_branch_id===branch.id&&['dispatched','partial'].includes(row.status)).length,
+    };
+  });
+  return {data:scoped,branches:branchRows,scope,clientItems:products.filter(product=>product.origin==='client-sample').length};
+}
+
 export function historicalPrice(state,productId,customerId,branchId) {
   const override=state.prices.find(r=>r.product_id===productId && r.customer_id===customerId && r.status==='posted');
   const related=[...state.invoices].filter(r=>!['draft','cancelled'].includes(r.status)&&r.customer_id===customerId&&(!branchId||r.branch_id===branchId)).sort((a,b)=>String(b.invoice_date||b.date).localeCompare(String(a.invoice_date||a.date)));

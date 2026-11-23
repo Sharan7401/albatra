@@ -1,5 +1,5 @@
 import {features,groups,numberOf} from './catalog.mjs';
-import {createDemoRepository,find,historicalPrice,invoiceBalance,knownStock,locked,permittedActions,purchaseBalance,today} from './repository.mjs';
+import {createDemoRepository,dashboardSnapshot,find,historicalPrice,invoiceBalance,knownStock,locked,permittedActions,purchaseBalance,today} from './repository.mjs';
 import {downloadCSV,mappingFields,previewWorkbook,readWorkbook,sheetHeaders} from './import.mjs';
 import clientSheets from './client-catalogue.mjs';
 
@@ -46,7 +46,7 @@ const ordinaryColumns=[['number','Record'],['name','Name / description'],['accou
 const displayStatus=value=>String(value||'').replaceAll('_',' ');
 const emptyLine=()=>({product_id:'',quantity:'1',unit_price:''});
 
-export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,useDemo,Heading,LoginBrand}) {
+export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,useDemo,Heading,LoginBrand,SidebarSections,Icons}) {
   const h=React.createElement;
   const {useState,useEffect,useMemo,useRef,useId}=React;
   const btn=(label,onClick,props={})=>h('button',{type:'button',className:'erp-button',onClick,...props},label);
@@ -123,10 +123,11 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const [query,setQuery]=useState('');
     const [open,setOpen]=useState(false);
     const [profile,setProfile]=useState(false);
+    const [gridOpen,setGridOpen]=useState(false);
     const [error,setError]=useState('');
     const input=useRef(null);
     const change=patch=>{try {repository.profile(patch);setError('');}catch(e){setError(e.message);}};
-    useEffect(()=>{setOpen(false);setQuery('');},[location.pathname]);
+    useEffect(()=>{setOpen(false);setQuery('');setGridOpen(false);},[location.pathname]);
     useEffect(()=>{
       const onKey=e=>{
         if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();input.current?.focus();setOpen(true);}
@@ -143,6 +144,10 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
         h('input',{ref:input,placeholder:'Search functions or items',value:query,onFocus:()=>setOpen(true),onChange:e=>{setQuery(e.target.value);setOpen(true);},'aria-label':'Global search'}),
         open&&q&&h('div',{className:'erp-search-results'},modules.map(x=>link(x.label,routeFor(x.key),{key:x.key})),items.map(x=>link(labelOf(x,'products'),`${routeFor('items')}?record=${encodeURIComponent(x.id)}`,{key:x.id})),!first&&h('p',null,'No matches.'))),
       h('select',{value:data.profile.branch_id,'aria-label':'Workspace branch',onChange:e=>change({branch_id:e.target.value})},h('option',{value:'all'},'All branches'),data.branches.map(x=>h('option',{key:x.id,value:x.id},x.name))),
+      h('div',{className:'erp-mode-toggle',role:'group','aria-label':'Navigation view'},
+        btn('Sidebar',()=>{change({navigation:'sidebar'});setGridOpen(false);},{'aria-pressed':data.profile.navigation!=='grid'}),
+        btn('Grid',()=>{change({navigation:'grid'});if(!['/demo','/demo/dashboard'].includes(location.pathname))setGridOpen(true);},{'aria-pressed':data.profile.navigation==='grid'})),
+      gridOpen&&data.profile.navigation==='grid'&&h(Modal,{heading:'ERP workspaces',onClose:()=>setGridOpen(false)},h('div',{className:'erp-dialog-body'},h(WorkspaceGrid,{onNavigate:()=>setGridOpen(false)}))),
       btn(data.profile.name,()=>setProfile(true),{className:'erp-button erp-profile'}),
       profile&&h(Modal,{heading:'Demo profile',onClose:()=>setProfile(false)},h('div',{className:'erp-dialog-body'},h('p',null,data.profile.name),h('label',{className:'erp-field'},'Demo role',h('select',{value:data.profile.role,onChange:e=>change({role:e.target.value})},data.roles.map(x=>h('option',{value:x.id,key:x.id},x.name)))),flash(error),link('Switch demo user','/demo/login'))));
   }
@@ -167,6 +172,46 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       return h(SidebarDomain,{key:domain,domain,entries,onNavigate});
     }));
   }
+  function WorkspaceGrid({onNavigate}) {
+    const location=useLocation();
+    const [section,setSection]=useState(null);
+    const grouped=SidebarSections.flatMap(group=>[
+      ...(group.items.length?[{label:group.label,entries:group.items.map(item=>({label:item.label,href:item.to==='/'?'/demo':`/demo${item.to}`,icon:item.icon}))}]:[]),
+      ...(sidebarDomains[group.label]||[]).map(domain=>({
+        label:domain,entries:groups.find(([title])=>title===domain)[1].filter(entry=>entry.key!=='settings').map(entry=>({label:entry.label,href:routeFor(entry.key)})),
+      })),
+    ]);
+    const bySection=new Map();
+    for(const group of grouped) bySection.set(group.label,[...(bySection.get(group.label)||[]),...group.entries]);
+    const gridSections=Array.from(bySection,([label,entries])=>({label,entries}));
+    const visible=section?gridSections.find(group=>group.label===section):null;
+    return h('nav',{'aria-label':'ERP workspace grid',className:'erp-workspace-grid'},
+      visible?h(React.Fragment,null,
+        h('div',{className:'erp-toolbar erp-grid-heading'},h('h2',{className:'font-heading font-bold text-sm'},visible.label),btn('All workspaces',()=>setSection(null))),
+        h('div',{className:'erp-tiles'},visible.entries.map(entry=>{
+          const Icon=Icons[entry.icon]||Icons.FileText;
+          return h(Link,{key:entry.href,to:entry.href,onClick:onNavigate,className:'erp-tile','aria-current':location.pathname===entry.href?'page':undefined},h(Icon,{className:'w-4 h-4 text-brand','aria-hidden':true}),entry.label);
+        }))):h('div',{className:'erp-tiles'},gridSections.map(group=>{
+          const Icon=Icons[group.entries[0]?.icon]||Icons.Boxes;
+          return h('button',{key:group.label,type:'button',className:'erp-tile',onClick:()=>setSection(group.label)},h(Icon,{className:'w-4 h-4 text-brand','aria-hidden':true}),group.label);
+        })));
+  }
+  function DashboardOverview({snapshot}) {
+    const {data}=useDemo();
+    const currency=data.settings.currency;
+    const format=value=>money(value,currency);
+    const labels=['Branch','Stocked items','Invoiced sales','Customer outstanding','Supplier outstanding','Incoming transfers'];
+    return h('section',{className:'erp-space','aria-label':'Branch overview'},
+      h('div',{className:'erp-toolbar erp-dashboard-heading'},
+        h('div',null,h('h2',{className:'font-heading text-sm font-bold'},'Branch overview'),h('p',{className:'text-xs text-muted-foreground'},snapshot.clientItems?`${snapshot.clientItems} client items in the catalogue. Stock and financial figures come from demo transactions.`:'Built-in demo records. Import a client catalogue to see it in the workspace.')),
+        link('Excel Import',routeFor('import'))),
+      h('div',{className:'erp-table-wrap'},h('table',{className:'erp-table'},
+        h('thead',null,h('tr',null,labels.map(label=>h('th',{key:label,scope:'col'},label)))),
+        h('tbody',null,snapshot.branches.map(row=>h('tr',{key:row.id},
+          h('th',{scope:'row'},row.name),h('td',null,row.stockedItems),h('td',null,row.invoiceCount?format(row.invoiced):'—'),
+          h('td',null,format(row.receivables)),h('td',null,format(row.payables)),h('td',null,row.incomingTransfers)))))));
+  }
+
   function ContextActions() {
     const {pathname}=useLocation();
     const keys=related[pathname];
@@ -434,7 +479,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const feature=features[key];
     const navigate=useNavigate();
     useEffect(()=>{if(feature?.special==='settings')navigate('/demo/settings',{replace:true});},[feature,navigate]);
-    if(!feature)return h('div',{className:'erp-space'},title('Function unavailable','Choose a function in the sidebar.'),link('Return to Dashboard','/demo'));
+    if(!feature)return h('div',{className:'erp-space'},title('Function unavailable','Choose a function from the workspace navigation.'),link('Return to Dashboard','/demo'));
     if(feature.special==='settings')return null;
     if(feature.special==='import')return h(ImportScreen);
     return h(Records,{key,feature});
@@ -444,5 +489,5 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const alias=pathname.match(/^\/demo\/operations\/([^/]+)$/)?.[1];
     return features[direct||alias]?.label;
   };
-  return {Login,Operations,TopBar,SidebarFunctions,ContextActions,routeEntries,titleFor};
+  return {Login,Operations,TopBar,SidebarFunctions,WorkspaceGrid,DashboardOverview,dashboardSnapshot,ContextActions,routeEntries,titleFor};
 }
