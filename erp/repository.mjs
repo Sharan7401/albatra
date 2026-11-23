@@ -296,6 +296,96 @@ export function permittedActions(feature,row) {
   return [];
 }
 
+const EXAMPLES_VERSION=1;
+
+function addWalkthroughExamples(state) {
+  if(state.examplesVersion===EXAMPLES_VERSION || !state.branches.length) return;
+  const existingLengths=Object.fromEntries(Object.entries(state).filter(([,rows])=>Array.isArray(rows)).map(([key,rows])=>[key,rows.length]));
+  const branch_id=state.branches[0].id;
+  const destination=state.branches[1]?.id;
+  const date=today();
+  const method=state.paymentTypes.find(row=>row.id==='Cash')?.id||state.paymentTypes[0]?.id;
+  if(!method) return;
+  const base={branch_id,date,origin:'demo-example'};
+  const numbering=state.numbering;
+  state.numbering=[];
+  const master=(table,key,fields)=>{
+    const record={...fields,id:`demo:walkthrough:${key}`,origin:'demo-example'};
+    add(state,table,record);
+    return record.id;
+  };
+  const supplier_id=master('suppliers','supplier',{name:'Demo Parts Supply',code:'DEMO-SUP',payment_terms:'30 days'});
+  const customer_id=master('customers','customer',{name:'Demo Workshop',code:'DEMO-CUS',classification:'Credit',credit_limit:2000});
+  const product_id=master('products','filter',{sku:'DEMO-FLT',part_number:'DEMO-001',name:'Demo Oil Filter',category:state.categories[0]?.id,unit:state.units[0]?.id,supplier_id,cost_price:20,selling_price:45,reorder_level:6,on_hand:0,available:0});
+  master('products','old-filter',{sku:'DEMO-FLT-OLD',part_number:'DEMO-000',name:'Demo Oil Filter (previous part)',supersede_id:product_id,on_hand:0,available:0});
+  master('demoUsers','operator',{name:'Demo Warehouse Operator',email:'warehouse@example.invalid',role:state.roles[0]?.id,branch_id});
+  const lines=(quantity,unit_price=45)=>[{product_id,quantity,unit_price}];
+  let sequence=0;
+  function document(key,fields,action='post') {
+    const feature=features[key];
+    const number=`DEMO-${prefixes[feature.entity]||feature.entity.toUpperCase().slice(0,5)}-${String(++sequence).padStart(3,'0')}`;
+    const row=linkNames(state,{...base,notes:'Demo walkthrough example',...fields,id:`demo:walkthrough:document:${sequence}`,number,variant:feature.variant||'',status:'draft'});
+    if(numberField[feature.entity])row[numberField[feature.entity]]=number;
+    if(dateField[feature.entity])row[dateField[feature.entity]]=date;
+    if(feature.entity==='purchases')row.expected_date=date;
+    validate(state,feature,row);
+    add(state,feature.entity,row);
+    if(action)post(state,feature,row,action);
+    audit(state,feature,row,action||'draft');
+    return row;
+  }
+  const customer={customer_id},supplier={supplier_id};
+  document('stock-receipts',{items:lines(24,20)});
+  document('stock-adjustments',{items:lines(2,20),direction:'Increase'});
+  document('prices',{product_id,selling_price:45});
+  document('customer-pricing',{product_id,...customer,selling_price:42});
+  document('costs',{product_id,cost_price:21});
+  const purchaseQuote=document('purchase-quotes',{...supplier,items:lines(15,20)});
+  const purchase=document('purchase-orders',{...supplier,source_id:purchaseQuote.id,items:lines(15,20)});
+  const receipt=document('purchase-receipts',{...supplier,source_id:purchase.id,items:lines(10,20)});
+  document('purchase-returns',{...supplier,source_id:receipt.id,items:lines(1,20)});
+  document('supplier-payments',{...supplier,source_id:purchase.id,amount:60,method});
+  document('supplier-debits',{...supplier,source_id:purchase.id,amount:20});
+  document('supplier-receipts',{...supplier,amount:10,method});
+  const quote=document('online-quotes',{...customer,items:lines(5,42)});
+  post(state,features.quotes,quote,'approve');
+  post(state,features.quotes,quote,'convert');
+  document('quotes',{...customer,items:lines(3,42)});
+  document('quote-approvals',{...customer,items:lines(2,42)},'approve');
+  const invoice=find(state,'invoices',quote.invoice_id);
+  document('invoice-part-payments',{...customer,source_id:invoice.id,amount:50,method});
+  document('credit-notes',{...customer,source_id:invoice.id,amount:15});
+  document('invoice-returns',{...customer,source_id:invoice.id,items:lines(1,42)});
+  document('sales-returns',{...customer,items:lines(1,42)});
+  const commission=document('commission-vouchers',{salesperson:'Demo Sales Operator',source_id:invoice.id,amount:10});
+  document('commission-returns',{source_id:commission.id,amount:2});
+  document('customer-payment-vouchers',{...customer,amount:12,method});
+  document('customer-lpos',{...customer,external_number:'DEMO-LPO-1001',items:lines(4,42)});
+  document('store-issues',{recipient:'Demo service counter',items:lines(1,20)});
+  if(destination) {
+    const transfer=document('transfers',{to_branch_id:destination,items:lines(8,20)});
+    document('online-transfer-receipts',{branch_id:destination,source_id:transfer.id,items:lines(3,20)});
+  }
+  const orderLine={...lines(4,42)[0],name:'Demo Oil Filter',sku:'DEMO-FLT',total:168};
+  const order=linkNames(state,{...base,...customer,id:'demo:walkthrough:order',order_number:'DEMO-SO-001',order_date:date,salesperson:'Demo Sales Operator',items:[orderLine],total:168,status:'ready'});
+  add(state,'orders',order);
+  const delivery=document('deliveries',{...customer,source_id:order.id,items:lines(2,42)});
+  post(state,features.deliveries,delivery,'convert');
+  document('deliveries',{...customer,source_id:order.id,items:lines(1,42)});
+  const expense=document('expenses',{account:'Demo packaging',amount:30,method});
+  document('expense-returns',{source_id:expense.id,amount:5});
+  const income=document('income',{account:'Demo service income',amount:40,method});
+  document('income-returns',{source_id:income.id,amount:8});
+  master('notifications','notification',{title:'Demo purchase partially received',message:'The walkthrough purchase still has an outstanding quantity.',type:'info',status:'unread',created_at:date});
+  state.numbering=numbering;
+  if(!state.numbering.some(row=>row.document==='invoices')) master('numbering','sequence',{document:'invoices',prefix:'INV',next:Math.max(1,asNumber(state.settings.next_invoice))});
+  for(const [key,count] of Object.entries(existingLengths)) {
+    const rows=state[key];
+    if(key!=='numbering') for(const row of rows.slice(0,rows.length-count)) row.origin='demo-example';
+  }
+  state.examplesVersion=EXAMPLES_VERSION;
+}
+
 function seedState(original, imported) {
   const state=copy(original);
   Object.assign(state,Object.fromEntries(entries.map(k=>[k,[]])));
@@ -339,17 +429,30 @@ export function applyImport(state,preview,filename) {
   }
   add(state,'imports',{id:id(),date:today(),name:filename,accepted:preview.rows.length,rejected:preview.errors.length,issues:preview.errors,sheets:preview.sheets});
 }
-export function createDemoRepository(original, imported, storage=globalThis.localStorage) {
-  const initial=()=>seedState(original(),imported);
+export function createDemoRepository(original, imported, storage=globalThis.localStorage, {examples=false}={}) {
+  const initial=()=>{
+    const fresh=seedState(original(),imported);
+    if(examples) addWalkthroughExamples(fresh);
+    return fresh;
+  };
   let state;
   let startupError='';
   try {
     const raw=storage?.getItem(STORAGE_KEY);
     state=raw?JSON.parse(raw):initial();
+    if(!raw&&examples) { try {storage?.setItem(STORAGE_KEY,JSON.stringify(state));} catch {startupError='Demo examples are available, but browser storage is blocked.';} }
     state.journal??=[];
     state.demoAccounts??=demoAccounts.map(([code,name,account_type])=>({id:code,code,name,account_type}));
     if(!Array.isArray(state.products)||!state.stock||!state.profile) fail('Invalid saved demo data.');
   } catch { state=initial();startupError='Saved demo data was unavailable. The sample dataset was opened.'; }
+  if(examples&&state.examplesVersion!==EXAMPLES_VERSION) {
+    try {
+      const next=copy(state);
+      addWalkthroughExamples(next);
+      storage?.setItem(STORAGE_KEY,JSON.stringify(next));
+      state=next;
+    } catch { startupError='The walkthrough examples could not be added. Existing demo records were kept.'; }
+  }
   const listeners=new Set();
   const commit = (make,replace=false)=>{
     const next=replace?make():copy(state);

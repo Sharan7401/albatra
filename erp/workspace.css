@@ -63,3 +63,4 @@
 .erp-dashboard-heading p{margin-top:.25rem}
 .erp-table tbody th[scope=row]{background:transparent;color:hsl(var(--foreground));font-weight:650}
 @media(max-width:600px){.erp-mode-toggle .erp-button{padding-inline:.32rem}.erp-top{gap:.25rem}.erp-top select{max-width:6.3rem}.erp-search input{width:5.25rem}}
+.erp-example-label{margin-inline-start:.35rem;color:hsl(var(--muted-foreground));font-size:.62rem;white-space:nowrap}

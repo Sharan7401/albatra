@@ -5,7 +5,7 @@ import clientSheets from './client-catalogue.mjs';
 
 export function createWorkspaceStore(seed) {
   const examples = seed();
-  return createDemoRepository(seed,previewWorkbook(clientSheets,{},examples.products));
+  return createDemoRepository(seed,previewWorkbook(clientSheets,{},examples.products),undefined,{examples:true});
 }
 const money = (value,currency='QAR') => new Intl.NumberFormat('en-QA',{style:'currency',currency:/^[A-Z]{3}$/.test(currency)?currency:'QAR'}).format(Number(value)||0);
 const branchName = (state,id)=>id==='IN-TRANSIT'?'In transit':find(state,'branches',id)?.name || id || '—';
@@ -25,6 +25,14 @@ const sidebarDomains={
   Accounting:['Finance'],
   Administration:['Administration'],
 };
+// One navigation entry for each shared workflow. Existing URLs remain usable.
+const duplicateWorkspacePaths=new Set(['/products','/quotations','/invoices','/purchases','/suppliers','/customers','/branches']);
+const duplicateFeatureKeys=new Set([
+  'settings','sales-invoice-remarks','quote-remarks','customer-classification','credit-limits','customer-history',
+  'supplier-payments','supplier-receipts','supplier-debits','invoice-part-payments',
+  'inventory-report','branch-quantities','item-transactions','item-history','financial-summary',
+]);
+const canonicalFeatures=entries=>entries.filter(entry=>!duplicateFeatureKeys.has(entry.key));
 const workspaceRoutes={
   Inventory:'/demo/inventory',Sales:'/demo/invoices',Quotations:'/demo/quotations',Purchases:'/demo/purchases',
   Warehouse:'/demo/inventory',Customers:'/demo/customers',Suppliers:'/demo/suppliers',Finance:'/demo/ledger',
@@ -32,14 +40,14 @@ const workspaceRoutes={
 };
 const related={
   '/demo/products':['items','prices','costs','import'],
-  '/demo/inventory':['branch-quantities','stock-receipts','stock-adjustments','transfers'],
+  '/demo/inventory':['branch-stock','stock-receipts','stock-adjustments','transfers'],
   '/demo/quotations':['quotes','quote-approvals','quote-to-invoice'],
   '/demo/orders':['sales-invoices','deliveries','delivery-invoices'],
-  '/demo/invoices':['sales-invoices','invoice-returns','invoice-part-payments'],
+  '/demo/invoices':['sales-invoices','invoice-returns','customer-receipt-vouchers'],
   '/demo/purchases':['purchase-quotes','purchase-orders','purchase-receipts','purchase-returns'],
   '/demo/customers':['customers','customer-pricing','customer-statements','customer-lpos'],
-  '/demo/suppliers':['suppliers','supplier-transactions','supplier-payments'],
-  '/demo/reports':['branch-stock','customer-outstanding','supplier-outstanding','financial-summary'],
+  '/demo/suppliers':['suppliers','supplier-transactions','supplier-payment-vouchers'],
+  '/demo/reports':['branch-stock','customer-outstanding','supplier-outstanding','financials'],
   '/demo/settings':['users','roles','numbering','import'],
 };
 const ordinaryColumns=[['number','Record'],['name','Name / description'],['account','Account / location'],['date','Date'],['status','Status'],['total','Total / qty']];
@@ -48,6 +56,7 @@ const emptyLine=()=>({product_id:'',quantity:'1',unit_price:''});
 
 export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,useDemo,Heading,LoginBrand,SidebarSections,Icons}) {
   const h=React.createElement;
+  const sidebarSections=SidebarSections.map(group=>({...group,items:group.items.filter(item=>!duplicateWorkspacePaths.has(item.to))}));
   const {useState,useEffect,useMemo,useRef,useId}=React;
   const btn=(label,onClick,props={})=>h('button',{type:'button',className:'erp-button',onClick,...props},label);
   const primary=(label,onClick,props={})=>btn(label,onClick,{className:'erp-button erp-primary',...props});
@@ -136,7 +145,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
     },[]);
     const q=searchText(query);
-    const modules=q?Object.values(features).filter(x=>searchText(`${x.group} ${x.label}`).includes(q)).slice(0,7):[];
+    const modules=q?canonicalFeatures(Object.values(features)).filter(x=>searchText(`${x.group} ${x.label}`).includes(q)).slice(0,7):[];
     const items=q?data.products.filter(x=>searchText(`${x.sku} ${x.part_number} ${x.name} ${x.description_ar}`).includes(q)).slice(0,6):[];
     const first=modules[0]?routeFor(modules[0].key):items[0]?`${routeFor('items')}?record=${encodeURIComponent(items[0].id)}`:'';
     return h('div',{className:'erp-top'},
@@ -168,17 +177,17 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const domains=sidebarDomains[group];
     if(!domains)return null;
     return h(React.Fragment,null,domains.map(domain=>{
-      const entries=groups.find(([title])=>title===domain)[1].filter(entry=>entry.key!=='settings');
+      const entries=canonicalFeatures(groups.find(([title])=>title===domain)[1]);
       return h(SidebarDomain,{key:domain,domain,entries,onNavigate});
     }));
   }
   function WorkspaceGrid({onNavigate}) {
     const location=useLocation();
     const [section,setSection]=useState(null);
-    const grouped=SidebarSections.flatMap(group=>[
+    const grouped=sidebarSections.flatMap(group=>[
       ...(group.items.length?[{label:group.label,entries:group.items.map(item=>({label:item.label,href:item.to==='/'?'/demo':`/demo${item.to}`,icon:item.icon}))}]:[]),
       ...(sidebarDomains[group.label]||[]).map(domain=>({
-        label:domain,entries:groups.find(([title])=>title===domain)[1].filter(entry=>entry.key!=='settings').map(entry=>({label:entry.label,href:routeFor(entry.key)})),
+        label:domain,entries:canonicalFeatures(groups.find(([title])=>title===domain)[1]).map(entry=>({label:entry.label,href:routeFor(entry.key)})),
       })),
     ]);
     const bySection=new Map();
@@ -197,7 +206,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
         })));
   }
   function DashboardOverview({snapshot}) {
-    const {data}=useDemo();
+    const {data,repository}=useDemo();
     const currency=data.settings.currency;
     const format=value=>money(value,currency);
     const labels=['Branch','Stocked items','Invoiced sales','Customer outstanding','Supplier outstanding','Incoming transfers'];
@@ -205,6 +214,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       h('div',{className:'erp-toolbar erp-dashboard-heading'},
         h('div',null,h('h2',{className:'font-heading text-sm font-bold'},'Branch overview'),h('p',{className:'text-xs text-muted-foreground'},snapshot.clientItems?`${snapshot.clientItems} client items in the catalogue. Stock and financial figures come from demo transactions.`:'Built-in demo records. Import a client catalogue to see it in the workspace.')),
         link('Excel Import',routeFor('import'))),
+      flash(repository.startupError),
       h('div',{className:'erp-table-wrap'},h('table',{className:'erp-table'},
         h('thead',null,h('tr',null,labels.map(label=>h('th',{key:label,scope:'col'},label)))),
         h('tbody',null,snapshot.branches.map(row=>h('tr',{key:row.id},
@@ -310,6 +320,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       h('div',{className:'erp-dialog-body erp-space'},
         feature.proposed&&h('p',{className:'erp-notice'},'Proposed workflow · Requires client validation'),
         h('p',{className:'erp-pill'},displayStatus(row.status||'Active')),
+        row.origin==='demo-example'&&h('p',{className:'text-xs text-muted-foreground'},'Demo example'),
         h('dl',{className:'erp-details'},feature.fields.filter(f=>row[f.key]!=null&&row[f.key]!=='').map(f=>h('div',{key:f.key},h('dt',null,f.label),h('dd',{dir:f.type==='arabic'?'rtl':undefined},f.type==='money'?money(row[f.key],state.settings.currency):output(f,row[f.key]))))),
         row.items?.length>0&&h('ul',{className:'erp-item-detail'},row.items.map((x,i)=>h('li',{key:i},`${x.sku||''} ${x.name||''} × ${x.quantity} · ${money(x.total,state.settings.currency)}`))),
         row.total!=null&&h('p',null,h('strong',null,`Total ${money(row.total,state.settings.currency)}`)),
@@ -422,7 +433,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
         h('span',null,`${filtered.length} records`))),
       h('div',{className:'erp-table-wrap'},h('table',{className:'erp-table'},
         h('thead',null,h('tr',null,ordinaryColumns.map(([key,label])=>h('th',{key,'aria-sort':sort[0]!==key?'none':sort[1]===1?'ascending':'descending'},btn(label+(sort[0]===key?(sort[1]===1?' ↑':' ↓'):''),()=>setSort([key,sort[0]===key?-sort[1]:1]),{className:'erp-sort'}))))),
-        h('tbody',null,filtered.slice((page-1)*20,page*20).map(row=>h('tr',{key:row.id},ordinaryColumns.map(([key])=>h('td',{key},key==='number'?btn(row.number||'View details',()=>{setSelected(row.id);setMode('detail');},{className:'erp-record-link'}):key==='total'&&moneyContext(feature,row)?money(row.total,data.settings.currency):String(row[key]??'')||'—')))),
+        h('tbody',null,filtered.slice((page-1)*20,page*20).map(row=>h('tr',{key:row.id},ordinaryColumns.map(([key])=>h('td',{key},key==='number'?h(React.Fragment,null,btn(row.number||'View details',()=>{setSelected(row.id);setMode('detail');},{className:'erp-record-link'}),row.record.origin==='demo-example'&&h('span',{className:'erp-example-label'},'Demo')):key==='total'&&moneyContext(feature,row)?money(row.total,data.settings.currency):String(row[key]??'')||'—')))),
           !filtered.length&&h('tr',null,h('td',{colSpan:6},feature.report?'No records match. Post a demo transaction to populate this report.':'No records match. Create a demo record or clear your filters.'))))),
       h('div',{className:'erp-toolbar'},h('span',null,`Page ${page} of ${pages}`),h('div',{className:'erp-actions'},btn('Previous',()=>setPagination(page-1),{disabled:page===1}),btn('Next',()=>setPagination(page+1),{disabled:page===pages}))),
       mode==='form'&&h(RecordForm,{feature,state:data,record,repository,onClose:close,onSaved:id=>{setSelected(id);setMode('detail');setMessage('Saved in this demo.');}}),
@@ -489,5 +500,5 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const alias=pathname.match(/^\/demo\/operations\/([^/]+)$/)?.[1];
     return features[direct||alias]?.label;
   };
-  return {Login,Operations,TopBar,SidebarFunctions,WorkspaceGrid,DashboardOverview,dashboardSnapshot,ContextActions,routeEntries,titleFor};
+  return {Login,Operations,TopBar,SidebarFunctions,WorkspaceGrid,DashboardOverview,dashboardSnapshot,ContextActions,routeEntries,sidebarSections,titleFor};
 }

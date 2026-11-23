@@ -14,7 +14,7 @@ code='import {createWorkspaceStore as erpStore,makeERPComponents as erpComponent
 const start=code.indexOf('function Mfe({children:e})');
 const end=code.indexOf('function Ml()',start);
 patch(code.slice(start,end), 'const erpDemoRepository=erpStore(Xj);function Mfe({children:e}){const t=_.useSyncExternalStore(erpDemoRepository.subscribe,erpDemoRepository.get),r=_.useMemo(()=>({data:t,repository:erpDemoRepository,...erpDemoRepository}),[t]);return o.jsx(nV.Provider,{value:r,children:e})}');
-patch('children:c2.map(t=>o.jsxs','children:[...c2.slice(0,4),{label:"Warehouse",items:[]},...c2.slice(4)].map(t=>o.jsxs');
+patch('children:c2.map(t=>o.jsxs','children:erpUI.sidebarSections.map(t=>o.jsxs');
 patch('},n.to)})})]},t.label))}),o.jsxs("div",{className:"border-t border-sidebar-border','},n.to)})}),o.jsx(erpUI.SidebarFunctions,{group:t.label,onNavigate:e})]},t.label))}),o.jsxs("div",{className:"border-t border-sidebar-border');
 const shellStart=code.indexOf('function $fe()');
 const shellEnd=code.indexOf('function Et(',shellStart);
