@@ -52,6 +52,14 @@ const entrySources={
   history:['stock-receipts','New stock receipt'],
 };
 const ordinaryColumns=[['number','Record'],['name','Name / description'],['account','Account / location'],['date','Date'],['status','Status'],['total','Total / qty']];
+const itemColumns=[['number','Item code'],['name','Item description'],['manufacturer','Manufacturer part #'],['classification','Category / brand'],['status','Status'],['quantity','On hand']];
+function recordColumns(feature) {
+  if(feature.entity==='products')return itemColumns;
+  if(feature.report==='stock'||feature.report==='movements')return [['number','Reference'],['name','Item'],['account','Branch'],['date','Date'],['status','Status'],['total','Quantity']];
+  const fieldLabel={invoices:'Customer',quotations:'Customer',purchases:'Supplier',purchaseQuotes:'Supplier',purchaseReceipts:'Supplier',purchaseReturns:'Supplier',transfers:'From → to',transferReceipts:'Receiving branch',deliveries:'Customer'}[feature.entity];
+  if(!fieldLabel)return ordinaryColumns;
+  return [['number','Document no.'],['name','Remarks / description'],['account',fieldLabel],['date','Document date'],['status','Status'],['total','Amount']];
+}
 const displayStatus=value=>String(value||'').replaceAll('_',' ');
 const statusTone=status=>{
   const label=String(status).toLowerCase();
@@ -456,7 +464,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const [account,setAccount]=useState('');
     const [scope,setScope]=useState('workspace');
     const [pagination,setPagination]=useState(1);
-    const [sort,setSort]=useState(['date',-1]);
+    const [sort,setSort]=useState(()=>feature.entity==='products'?['number',1]:['date',-1]);
     const [mode,setMode]=useState('');
     const [selected,setSelected]=useState(null);
     const [prefillSource,setPrefillSource]=useState('');
@@ -482,7 +490,16 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
     },[mode,feature]);
     const branch=scope==='workspace'?data.profile.branch_id:scope;
-    const rows=useMemo(()=>feature.report?reportRows(data,feature.report,branch):matchedRows(data,feature).map(row=>toRow(data,row,feature.entity)),[data,feature,branch]);
+    const columns=recordColumns(feature);
+    const rows=useMemo(()=>{
+      if(feature.report)return reportRows(data,feature.report,branch);
+      return matchedRows(data,feature).map(row=>{
+        const display=toRow(data,row,feature.entity);
+        if(feature.entity==='products')return {...display,manufacturer:row.part_number||row.oem_number,classification:[row.category,row.vehicle_make].filter(Boolean).join(' / '),quantity:branch==='all'?Number(row.on_hand??row.available??0):knownStock(data,row.id,branch)};
+        if(row.to_branch_id)return {...display,account:branchName(data,row.branch_id)+' → '+branchName(data,row.to_branch_id)};
+        return display;
+      });
+    },[data,feature,branch]);
     const filtered=rows.filter(row=>(!recentSales||(row.date>=periodStart&&row.date<=periodEnd))&&(!query||Object.values(row).some(x=>typeof x!=='object'&&searchText(x).includes(searchText(query)))||searchText(`${row.record.sku||''} ${row.record.part_number||''} ${row.record.description_ar||''}`).includes(searchText(query)))&&(status?row.status===status:!isArchived(row.record))&&(!account||[row.record.customer_id,row.record.supplier_id].includes(account))&&(!itemParam||row.record.product_id===itemParam||row.record.items?.some(x=>x.product_id===itemParam))&&(branch==='all'||!row.branch_id||row.branch_id===branch));
     filtered.sort((a,b)=>typeof a[sort[0]]==='number'&&typeof b[sort[0]]==='number'?(a[sort[0]]-b[sort[0]])*sort[1]:String(a[sort[0]]??'').localeCompare(String(b[sort[0]]??''),undefined,{numeric:true})*sort[1]);
     const pages=Math.max(1,Math.ceil(filtered.length/20)),page=Math.min(pages,pagination);
@@ -494,7 +511,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       setQuery('');setStatus('');setAccount('');setScope('workspace');
       if(recentSales){search.delete('period');navigate({pathname:location.pathname,search:search.toString()},{replace:true});}
     };
-    const download=()=>downloadCSV(feature.key+'.csv',[ordinaryColumns.map(([,name])=>name),...filtered.map(row=>ordinaryColumns.map(([key])=>row[key]))]);
+    const download=()=>downloadCSV(feature.key+'.csv',[columns.map(([,name])=>name),...filtered.map(row=>columns.map(([key])=>row[key]))]);
     const partyTable=['customerHistory','customerStatement'].includes(feature.report)?'customers':feature.report==='supplierHistory'?'suppliers':null;
     const destination=rows.find(x=>x.id===selected)?.entity;
     const source=entrySources[feature.report];
@@ -517,12 +534,12 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
         partyTable&&h('select',{value:account,onChange:e=>setAccount(e.target.value),'aria-label':'Filter by account'},h('option',{value:''},'All accounts'),data[partyTable].map(x=>h('option',{key:x.id,value:x.id},x.name))),
         hasFilters&&btn('Clear filters',clearFilters,{className:'erp-button erp-clear-filters'})),
       h('div',{className:'erp-table-wrap'},h('table',{className:'erp-table'},
-        h('thead',null,h('tr',null,ordinaryColumns.map(([key,label])=>h('th',{key,'aria-sort':sort[0]!==key?'none':sort[1]===1?'ascending':'descending'},btn(label+(sort[0]===key?(sort[1]===1?' ↑':' ↓'):''),()=>setSort([key,sort[0]===key?-sort[1]:1]),{className:'erp-sort'}))),!feature.report&&h('th',{scope:'col'},'Actions'))),
+        h('thead',null,h('tr',null,columns.map(([key,label])=>h('th',{key,'aria-sort':sort[0]!==key?'none':sort[1]===1?'ascending':'descending'},btn(label+(sort[0]===key?(sort[1]===1?' ↑':' ↓'):''),()=>setSort([key,sort[0]===key?-sort[1]:1]),{className:'erp-sort'}))),!feature.report&&h('th',{scope:'col'},'Actions'))),
         h('tbody',null,filtered.slice((page-1)*20,page*20).map(row=>{
           const display=row.number||row.name;
           const view=()=>{setSelected(row.id);setMode('detail');};
           const edit=()=>{setSelected(row.id);setMode('form');};
-          const cells=ordinaryColumns.map(([key])=>{
+          const cells=columns.map(([key])=>{
             let value;
             if(key==='number') value=h(React.Fragment,null,btn(display||'View details',view,{className:'erp-record-link'}),row.record.origin==='demo-example'&&h('span',{className:'erp-example-label'},'Demo'));
             else if(key==='status')value=h('span',{className:'erp-status','data-tone':statusTone(row.status)},row.status);

@@ -228,3 +228,6 @@
 @media(prefers-reduced-motion:reduce) {
   .erp-demo-shell *,.erp-dialog * {transition:none!important}
 }
+.erp-col-number,.erp-col-manufacturer,.erp-col-quantity {font-variant-numeric:tabular-nums}
+.erp-col-manufacturer,.erp-col-quantity {white-space:nowrap}
+.erp-col-quantity {font-weight:700}
