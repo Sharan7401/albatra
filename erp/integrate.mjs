@@ -14,8 +14,9 @@ code='import {createWorkspaceStore as erpStore,makeERPComponents as erpComponent
 const start=code.indexOf('function Mfe({children:e})');
 const end=code.indexOf('function Ml()',start);
 patch(code.slice(start,end), 'const erpDemoRepository=erpStore(Xj);function Mfe({children:e}){const t=_.useSyncExternalStore(erpDemoRepository.subscribe,erpDemoRepository.get),r=_.useMemo(()=>({data:t,repository:erpDemoRepository,...erpDemoRepository}),[t]);return o.jsx(nV.Provider,{value:r,children:e})}');
-patch('children:c2.map(t=>o.jsxs','children:erpUI.sidebarSections.map(t=>o.jsxs');
-patch('},n.to)})})]},t.label))}),o.jsxs("div",{className:"border-t border-sidebar-border','},n.to)})}),o.jsx(erpUI.SidebarFunctions,{group:t.label,onNavigate:e})]},t.label))}),o.jsxs("div",{className:"border-t border-sidebar-border');
+const sidebarNavStart=code.indexOf('o.jsx("nav",{className:"flex-1 overflow-y-auto px-3 py-4 space-y-5",children:c2.map');
+const sidebarNavEnd=code.indexOf(',o.jsxs("div",{className:"border-t border-sidebar-border',sidebarNavStart);
+patch(code.slice(sidebarNavStart,sidebarNavEnd),'o.jsx("nav",{className:"flex-1 overflow-y-auto px-3 py-4 space-y-2","aria-label":"Oracle main menu sidebar",children:o.jsx(erpUI.SidebarFunctions,{onNavigate:e})})');
 const shellStart=code.indexOf('function $fe()');
 const shellEnd=code.indexOf('function Et(',shellStart);
 const shell=code.slice(shellStart,shellEnd);
@@ -71,7 +72,7 @@ const posEnd=code.indexOf(';return o.jsxs',posStart);
 patch(code.slice(posStart,posEnd),'I=()=>{try{const lines=d.map(x=>({product_id:x.product_id,name:x.name,sku:x.sku,quantity:x.quantity,unit_price:x.price,total:be(x.price*x.quantity)}));const result=erpRepository.pos({seller:r,branch:a,lines,method:p,tendered:Number(v)});b(result);h([]);w("");j("")}catch(error){j(error.message)}}');
 patch('Opens the dashboard instantly — no account needed.','Open the isolated demo workspace.');
 patch('if(!Kde()){window.location.href="/demo";return}y(Yj,p)','window.location.href="/demo/login"');
-patch('function DOe(){return','const erpUI=erpComponents({React:_,Link:ti,useLocation:ai,useNavigate:Bu,useParams:()=>({feature:ai().pathname.split("/").filter(Boolean).at(-1)}),useDemo:Ml,Heading:Et,LoginBrand:Poe,SidebarSections:[...c2.slice(0,4),{label:"Warehouse",items:[]},...c2.slice(4)],Icons:Ife});function DOe(){if(/^\\/demo(?:\\/|$)/.test(window.location.pathname))return o.jsx(uX,{children:o.jsx(kF,{children:o.jsx(Ze,{path:"/demo/*",element:o.jsx(e2e,{})})})});return');
+patch('function DOe(){return','const erpUI=erpComponents({React:_,Link:ti,useLocation:ai,useNavigate:Bu,useParams:()=>({feature:ai().pathname.split("/").filter(Boolean).at(-1)}),useDemo:Ml,Heading:Et,LoginBrand:Poe,Icons:Ife});function DOe(){if(/^\\/demo(?:\\/|$)/.test(window.location.pathname))return o.jsx(uX,{children:o.jsx(kF,{children:o.jsx(Ze,{path:"/demo/*",element:o.jsx(e2e,{})})})});return');
 code=code.replaceAll('Nothing is saved; reload to start again.','Changes are saved in this browser.').replaceAll('Nothing is saved: reload to start again.','Changes are saved in this browser.').replaceAll('Nothing is saved.','Changes are saved in this browser.');
 patch('async function BPe({document:e,kind:t,currency:n="QAR",company:r={},filename:i}){var v;',
   'async function BPe({document:e,kind:t,currency:n="QAR",company:r={},filename:i}){if(/^\\/demo(?:\\/|$)/.test(window.location.pathname)&&["127.0.0.1","localhost"].includes(window.location.hostname))return LPe({document:e,kind:t,currency:n,company:r});var v;');

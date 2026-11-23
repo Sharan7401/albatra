@@ -2,7 +2,7 @@
 
 The visible AL BATRA Oracle Main Menu screenshot contains 41 labeled business functions. The recording shows the full label “Pur Process With Statistics” near 33:00. Sampled portions also show Item Details and cost change history, sales entry and transfer information. The menu labels and screen samples do not establish the exact SRV calculation rules.
 
-Open the routes below from the deployed preview or search for the function in the workspace. Remarks, settlement, and processing views share business records with their primary routes.
+The Sidebar, Grid and function search use this same 41-entry list. The grid follows the legacy menu’s reading order. The dashboard remains available from the top bar. Remarks, settlement, and processing views share business records with their primary routes.
 
 | # | Oracle menu | Demo |
 |---:|---|---|

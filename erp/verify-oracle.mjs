@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {features} from './catalog.mjs';
+import {features,oracleMenu} from './catalog.mjs';
 import {createDemoRepository,pendingDeliveriesForYear,stockReceiptCosts,purchaseStatistics,knownStock} from './repository.mjs';
 
 const menu = [
@@ -174,6 +174,7 @@ const state=new Map(),storage={getItem:key=>state.get(key),setItem:(key,value)=>
 const desk=createDemoRepository(seed,{rows:[]},storage,{examples:true});
 const data=desk.get();
 assert.equal(menu.length,41);
+assert.deepEqual(oracleMenu.map(({label,key})=>[label,key]),menu);
 assert.equal(new Set(menu.map(([,key])=>key)).size,41);
 for(const [label,key] of menu) {
   const feature=features[key];

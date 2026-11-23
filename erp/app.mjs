@@ -1,4 +1,4 @@
-import {features,groups,numberOf} from './catalog.mjs';
+import {features,numberOf,oracleMenu} from './catalog.mjs';
 import {canArchive,canEdit,createDemoRepository,dashboardSnapshot,find,isArchived,historicalPrice,invoiceBalance,knownStock,permittedActions,purchaseBalance,purchaseLineProgress,purchaseStatistics,pendingDeliveriesForYear,stockReceiptCosts,today} from './repository.mjs';
 import {downloadCSV,mappingFields,previewWorkbook,readWorkbook,sheetHeaders} from './import.mjs';
 import clientSheets from './client-catalogue.mjs';
@@ -15,24 +15,12 @@ const searchText = value=>String(value??'').toLowerCase().trim();
 const aliases={customers:'customer-master',suppliers:'supplier-master',branches:'branch-master'};
 const routeEntries=Object.keys(features).filter(key=>key!=='settings').map(key=>[aliases[key]||key,key]);
 const routeFor=key=>`/demo/${aliases[key]||key}`;
-const sidebarDomains={
-  Catalogue:['Inventory'],
-  Sales:['Sales','Quotations'],
-  Procurement:['Purchases'],
-  Warehouse:['Warehouse'],
-  Relationships:['Customers','Suppliers'],
-  Insights:['Reports'],
-  Accounting:['Finance'],
-  Administration:['Administration'],
-};
-// One navigation entry for each shared workflow. Existing URLs remain usable.
-const duplicateWorkspacePaths=new Set(['/products','/quotations','/invoices','/purchases','/suppliers','/customers','/branches']);
-const duplicateFeatureKeys=new Set([
-  'settings','sales-invoice-remarks','quote-remarks','customer-classification','credit-limits','customer-history',
-  'supplier-payments','supplier-receipts','supplier-debits','invoice-part-payments',
-  'inventory-report','branch-quantities','item-transactions','item-history','financial-summary',
-]);
-const canonicalFeatures=entries=>entries.filter(entry=>!duplicateFeatureKeys.has(entry.key));
+const menuGroups = new Map();
+for(const entry of oracleMenu) {
+  if(!menuGroups.has(entry.group)) menuGroups.set(entry.group,[]);
+  menuGroups.get(entry.group).push(entry);
+}
+const menuIcons={Inventory:'Boxes',Warehouse:'Truck',Sales:'FileText',Quotations:'ClipboardList',Purchases:'ShoppingCart',Customers:'Users',Suppliers:'Truck',Finance:'CreditCard'};
 const workspaceRoutes={
   Inventory:'/demo/inventory',Sales:'/demo/invoices',Quotations:'/demo/quotations',Purchases:'/demo/purchases',
   Warehouse:'/demo/inventory',Customers:'/demo/customers',Suppliers:'/demo/suppliers',Finance:'/demo/ledger',
@@ -40,6 +28,7 @@ const workspaceRoutes={
 };
 const related={
   '/demo/products':['items','prices','costs','import'],
+  '/demo/items':['import'],
   '/demo/inventory':['branch-stock','stock-receipts','stock-adjustments','transfers'],
   '/demo/quotations':['quotes','quote-approvals','quote-to-invoice'],
   '/demo/orders':['sales-invoices','deliveries','delivery-invoices'],
@@ -71,9 +60,8 @@ const ordinaryColumns=[['number','Record'],['name','Name / description'],['accou
 const displayStatus=value=>String(value||'').replaceAll('_',' ');
 const emptyLine=()=>({product_id:'',quantity:'1',unit_price:''});
 
-export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,useDemo,Heading,LoginBrand,SidebarSections,Icons}) {
+export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,useDemo,Heading,LoginBrand,Icons}) {
   const h=React.createElement;
-  const sidebarSections=SidebarSections.map(group=>({...group,items:group.items.filter(item=>!duplicateWorkspacePaths.has(item.to))}));
   const {useState,useEffect,useMemo,useRef,useId}=React;
   const btn=(label,onClick,props={})=>h('button',{type:'button',className:'erp-button',onClick,...props},label);
   const primary=(label,onClick,props={})=>btn(label,onClick,{className:'erp-button erp-primary',...props});
@@ -162,7 +150,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
     },[]);
     const q=searchText(query);
-    const modules=q?Object.values(features).filter(x=>searchText(`${x.group} ${x.label}`).includes(q)).slice(0,7):[];
+    const modules=q?oracleMenu.filter(x=>searchText(`${x.group} ${x.label} ${features[x.key].label}`).includes(q)).slice(0,7):[];
     const items=q?data.products.filter(x=>searchText(`${x.sku} ${x.part_number} ${x.name} ${x.description_ar}`).includes(q)).slice(0,6):[];
     const first=modules[0]?routeFor(modules[0].key):items[0]?`${routeFor('items')}?record=${encodeURIComponent(items[0].id)}`:'';
     return h('div',{className:'erp-top'},
@@ -170,10 +158,11 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
         h('input',{ref:input,placeholder:'Search functions or items',value:query,onFocus:()=>setOpen(true),onChange:e=>{setQuery(e.target.value);setOpen(true);},'aria-label':'Global search'}),
         open&&q&&h('div',{className:'erp-search-results'},modules.map(x=>link(x.label,routeFor(x.key),{key:x.key})),items.map(x=>link(labelOf(x,'products'),`${routeFor('items')}?record=${encodeURIComponent(x.id)}`,{key:x.id})),!first&&h('p',null,'No matches.'))),
       h('select',{value:data.profile.branch_id,'aria-label':'Workspace branch',onChange:e=>change({branch_id:e.target.value})},h('option',{value:'all'},'All branches'),data.branches.filter(x=>!isArchived(x)).map(x=>h('option',{key:x.id,value:x.id},x.name))),
+      link('Dashboard','/demo/dashboard',{className:'erp-button erp-dashboard-link','aria-current':['/demo','/demo/dashboard'].includes(location.pathname)?'page':undefined}),
       h('div',{className:'erp-mode-toggle',role:'group','aria-label':'Navigation view'},
         btn('Sidebar',()=>{change({navigation:'sidebar'});setGridOpen(false);},{'aria-pressed':data.profile.navigation!=='grid'}),
         btn('Grid',()=>{change({navigation:'grid'});if(!['/demo','/demo/dashboard'].includes(location.pathname))setGridOpen(true);},{'aria-pressed':data.profile.navigation==='grid'})),
-      gridOpen&&data.profile.navigation==='grid'&&h(Modal,{heading:'ERP workspaces',onClose:()=>setGridOpen(false)},h('div',{className:'erp-dialog-body'},h(WorkspaceGrid,{onNavigate:()=>setGridOpen(false)}))),
+      gridOpen&&data.profile.navigation==='grid'&&h(Modal,{heading:'Main Menu',onClose:()=>setGridOpen(false)},h('div',{className:'erp-dialog-body'},h(WorkspaceGrid,{onNavigate:()=>setGridOpen(false)}))),
       btn(data.profile.name,()=>setProfile(true),{className:'erp-button erp-profile'}),
       profile&&h(Modal,{heading:'Demo profile',onClose:()=>setProfile(false)},h('div',{className:'erp-dialog-body'},h('p',null,data.profile.name),h('label',{className:'erp-field'},'Demo role',h('select',{value:data.profile.role,onChange:e=>change({role:e.target.value})},data.roles.filter(x=>!isArchived(x)).map(x=>h('option',{value:x.id,key:x.id},x.name)))),flash(error),link('Switch demo user','/demo/login'))));
   }
@@ -190,37 +179,19 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
         return h(Link,{key:entry.key,to:href,onClick:onNavigate,className:'erp-sidebar-link', 'aria-current':current?'page':undefined},entry.label);
       })));
   }
-  function SidebarFunctions({group,onNavigate}) {
-    const domains=sidebarDomains[group];
-    if(!domains)return null;
-    return h(React.Fragment,null,domains.map(domain=>{
-      const entries=canonicalFeatures(groups.find(([title])=>title===domain)[1]);
-      return h(SidebarDomain,{key:domain,domain,entries,onNavigate});
-    }));
+  function SidebarFunctions({onNavigate}) {
+    return Array.from(menuGroups,([domain,entries])=>h(SidebarDomain,{key:domain,domain,entries,onNavigate}));
   }
   function WorkspaceGrid({onNavigate}) {
-    const location=useLocation();
-    const [section,setSection]=useState(null);
-    const grouped=sidebarSections.flatMap(group=>[
-      ...(group.items.length?[{label:group.label,entries:group.items.map(item=>({label:item.label,href:item.to==='/'?'/demo':`/demo${item.to}`,icon:item.icon}))}]:[]),
-      ...(sidebarDomains[group.label]||[]).map(domain=>({
-        label:domain,entries:canonicalFeatures(groups.find(([title])=>title===domain)[1]).map(entry=>({label:entry.label,href:routeFor(entry.key)})),
-      })),
-    ]);
-    const bySection=new Map();
-    for(const group of grouped) bySection.set(group.label,[...(bySection.get(group.label)||[]),...group.entries]);
-    const gridSections=Array.from(bySection,([label,entries])=>({label,entries}));
-    const visible=section?gridSections.find(group=>group.label===section):null;
-    return h('nav',{'aria-label':'ERP workspace grid',className:'erp-workspace-grid'},
-      visible?h(React.Fragment,null,
-        h('div',{className:'erp-toolbar erp-grid-heading'},h('h2',{className:'font-heading font-bold text-sm'},visible.label),btn('All workspaces',()=>setSection(null))),
-        h('div',{className:'erp-tiles'},visible.entries.map(entry=>{
-          const Icon=Icons[entry.icon]||Icons.FileText;
-          return h(Link,{key:entry.href,to:entry.href,onClick:onNavigate,className:'erp-tile','aria-current':location.pathname===entry.href?'page':undefined},h(Icon,{className:'w-4 h-4 text-brand','aria-hidden':true}),entry.label);
-        }))):h('div',{className:'erp-tiles'},gridSections.map(group=>{
-          const Icon=Icons[group.entries[0]?.icon]||Icons.Boxes;
-          return h('button',{key:group.label,type:'button',className:'erp-tile',onClick:()=>setSection(group.label)},h(Icon,{className:'w-4 h-4 text-brand','aria-hidden':true}),group.label);
-        })));
+    const {pathname}=useLocation();
+    return h('nav',{'aria-label':'Oracle main menu grid',className:'erp-workspace-grid'},
+      !onNavigate&&h('h2',{className:'font-heading text-sm font-bold'},'Main Menu'),
+      h('div',{className:'erp-tiles'},oracleMenu.map(entry=>{
+        const href=routeFor(entry.key);
+        const Icon=Icons[menuIcons[entry.group]]||Icons.FileText;
+        return h(Link,{key:entry.key,to:href,onClick:onNavigate,className:'erp-tile','aria-current':pathname===href?'page':undefined},
+          h(Icon,{className:'w-4 h-4 text-brand','aria-hidden':true}),entry.label);
+      })));
   }
   function DashboardOverview({snapshot}) {
     const {data,repository}=useDemo();
@@ -229,8 +200,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const labels=['Branch','Stocked items','Invoiced sales','Customer outstanding','Supplier outstanding','Incoming transfers'];
     return h('section',{className:'erp-space','aria-label':'Branch overview'},
       h('div',{className:'erp-toolbar erp-dashboard-heading'},
-        h('div',null,h('h2',{className:'font-heading text-sm font-bold'},'Branch overview'),h('p',{className:'text-xs text-muted-foreground'},snapshot.clientItems?`${snapshot.clientItems} client items in the catalogue. Stock and financial figures come from demo transactions.`:'Built-in demo records. Import a client catalogue to see it in the workspace.')),
-        link('Excel Import',routeFor('import'))),
+        h('div',null,h('h2',{className:'font-heading text-sm font-bold'},'Branch overview'),h('p',{className:'text-xs text-muted-foreground'},snapshot.clientItems?`${snapshot.clientItems} client items in the catalogue. Stock and financial figures come from demo transactions.`:'Built-in demo records.'))),
       flash(repository.startupError),
       h('div',{className:'erp-table-wrap'},h('table',{className:'erp-table'},
         h('thead',null,h('tr',null,labels.map(label=>h('th',{key:label,scope:'col'},label)))),
@@ -607,5 +577,5 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const alias=pathname.match(/^\/demo\/operations\/([^/]+)$/)?.[1];
     return features[direct||alias]?.label;
   };
-  return {Login,Operations,TopBar,SidebarFunctions,WorkspaceGrid,DashboardOverview,dashboardSnapshot,ContextActions,LegacyRowActions,legacyCanEdit,routeEntries,sidebarSections,titleFor};
+  return {Login,Operations,TopBar,SidebarFunctions,WorkspaceGrid,DashboardOverview,dashboardSnapshot,ContextActions,LegacyRowActions,legacyCanEdit,routeEntries,titleFor};
 }
