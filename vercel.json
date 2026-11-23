@@ -1,23 +1,22 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
+  "buildCommand": "node erp/build-preview.mjs",
+  "outputDirectory": "dist",
+  "redirects": [
+    { "source": "/", "destination": "/demo/login", "permanent": false }
+  ],
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://albatra.base44.app/api/:path*" },
-    { "source": "/socket.io/:path*", "destination": "https://albatra.base44.app/socket.io/:path*" },
-    { "source": "/assets/index-B4sSgSHQ.js", "destination": "/index-B4sSgSHQ.js" },
-    { "source": "/assets/index-yny9lcrr.css", "destination": "/index-yny9lcrr.css" },
-    { "source": "/assets/:path*", "destination": "https://albatra.base44.app/assets/:path*" },
-    { "source": "/favicon.svg", "destination": "https://albatra.base44.app/favicon.svg" },
-    { "source": "/manifest.json", "destination": "https://albatra.base44.app/manifest.json" },
-    { "source": "/:path*", "destination": "/index.html" }
+    { "source": "/demo/:path*", "destination": "/index.html" },
+    { "source": "/login", "destination": "/staff.html" }
   ],
   "headers": [
     {
-      "source": "/api/:path*",
+      "source": "/:path*",
       "headers": [
         { "key": "Cache-Control", "value": "private, no-store" },
-        { "key": "CDN-Cache-Control", "value": "no-store" },
-        { "key": "Vercel-CDN-Cache-Control", "value": "no-store" }
+        { "key": "Content-Security-Policy", "value": "connect-src 'self'; object-src 'none'; base-uri 'none'" },
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
       ]
     }
   ]
