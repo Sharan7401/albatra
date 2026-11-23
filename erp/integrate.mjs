@@ -14,19 +14,20 @@ code='import {createWorkspaceStore as erpStore,makeERPComponents as erpComponent
 const start=code.indexOf('function Mfe({children:e})');
 const end=code.indexOf('function Ml()',start);
 patch(code.slice(start,end), 'const erpDemoRepository=erpStore(Xj);function Mfe({children:e}){const t=_.useSyncExternalStore(erpDemoRepository.subscribe,erpDemoRepository.get),r=_.useMemo(()=>({data:t,repository:erpDemoRepository,...erpDemoRepository}),[t]);return o.jsx(nV.Provider,{value:r,children:e})}');
-patch('Dfe=e=>e==="/"?"/demo":`/demo${e}`','Dfe=e=>e==="/"?"/demo/dashboard":`/demo${e}`');
-patch('children:c2.map(t=>o.jsxs','children:[o.jsx(OF,{to:"/demo",end:!0,onClick:e,className:"block rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white",children:"Main Menu"},"erp-menu"),...c2.map(t=>o.jsxs');
-patch('},n.to)})})]},t.label))}),o.jsxs("div",{className:"border-t border-sidebar-border','},n.to)})})]},t.label))]}),o.jsxs("div",{className:"border-t border-sidebar-border');
+patch('children:c2.map(t=>o.jsxs','children:[...c2.slice(0,4),{label:"Warehouse",items:[]},...c2.slice(4)].map(t=>o.jsxs');
+patch('},n.to)})})]},t.label))}),o.jsxs("div",{className:"border-t border-sidebar-border','},n.to)})}),o.jsx(erpUI.SidebarFunctions,{group:t.label,onNavigate:e})]},t.label))}),o.jsxs("div",{className:"border-t border-sidebar-border');
 patch('Illustrative sample data. Nothing here is saved or connected to a real company.','Demonstration data is saved in this browser.');
 patch('o.jsxs(ti,{to:"/login",className:"h-9 w-full rounded-lg','o.jsxs("a",{href:"/login",className:"h-9 w-full rounded-lg');
-patch('i=r?XU[`/${r}`]||"Demo":"Executive Dashboard"','i=r==="dashboard"?"Executive Dashboard":r==="operations"?"ERP Operations":r?XU[`/${r}`]||"Demo":"Main Menu"');
+patch('i=r?XU[`/${r}`]||"Demo":"Executive Dashboard"','i=erpUI.titleFor(n.pathname)||(r==="dashboard"?"Executive Dashboard":r?XU[`/${r}`]||"Demo":"Executive Dashboard")');
 patch('o.jsx(ti,{to:"/login",className:"h-8 px-3 rounded-lg border border-border text-[11px] font-semibold inline-flex items-center gap-1.5 text-foreground/80 hover:text-brand hover:border-brand/30 transition",children:"Sign in"})','o.jsx(erpUI.TopBar,{})');
 patch('children:o.jsx(Mfe,{children:o.jsx($k,{})})','children:o.jsx($k,{})');
+patch('className:"mt-1 text-sm text-muted-foreground max-w-2xl",children:t})]}),r&&o.jsx("div",{className:"flex flex-wrap items-center gap-2",children:r})]})}function Lfe',
+  'className:"mt-1 text-sm text-muted-foreground max-w-2xl",children:t}),o.jsx(erpUI.ContextActions,{})]}),r&&o.jsx("div",{className:"flex flex-wrap items-center gap-2",children:r})]})}function Lfe');
 patch('const t=mv(e).filter(n=>n.status!=="cancelled")','const t=mv(e).filter(n=>!["cancelled","draft"].includes(n.status))');
 patch('const t=mv(e).filter(x=>x.status!=="cancelled")','const t=mv(e).filter(x=>!["cancelled","draft"].includes(x.status))');
 patch('Tfe=e=>Math.max(0,Number(e.total||0)-Number(e.amount_paid||0))','Tfe=e=>Math.max(0,Number(e.total||0)-Number(e.amount_paid||0)-Number(e.credit_total||0))');
 patch('function e2e(){return o.jsx(kF,{children:o.jsxs(Ze,{element:o.jsx($fe,{}),children:[o.jsx(Ze,{index:!0,element:o.jsx(RPe,{})}),',
-  'function e2e(){return o.jsxs(kF,{children:[o.jsx(Ze,{path:"login",element:o.jsx(Mfe,{children:o.jsx(erpUI.Login,{})})}),o.jsxs(Ze,{element:o.jsx(Mfe,{children:o.jsx($fe,{})}),children:[o.jsx(Ze,{index:!0,element:o.jsx(erpUI.Menu,{})}),o.jsx(Ze,{path:"dashboard",element:o.jsx(RPe,{})}),o.jsx(Ze,{path:"operations/:feature",element:o.jsx(erpUI.Operations,{})}),...["accounts","ledger","financials"].map(key=>o.jsx(Ze,{path:key,element:o.jsx(erpUI.Operations,{featureKey:key})},key)),');
+  'function e2e(){return o.jsxs(kF,{children:[o.jsx(Ze,{path:"login",element:o.jsx(Mfe,{children:o.jsx(erpUI.Login,{})})}),o.jsxs(Ze,{element:o.jsx(Mfe,{children:o.jsx($fe,{})}),children:[o.jsx(Ze,{index:!0,element:o.jsx(RPe,{})}),o.jsx(Ze,{path:"dashboard",element:o.jsx(RPe,{})}),o.jsx(Ze,{path:"operations/:feature",element:o.jsx(erpUI.Operations,{})}),...erpUI.routeEntries.map(([path,key])=>o.jsx(Ze,{path,element:o.jsx(erpUI.Operations,{featureKey:key})},path)),');
 patch('path:"*",element:o.jsx(NF,{to:"/demo",replace:!0})})]})})}let Ts',
   'path:"*",element:o.jsx(NF,{to:"/demo",replace:!0})})]})]})}let Ts');
 patch('function JPe(){var L,$;const{data:e,add:t,update:n}=Ml()','function JPe(){var L,$;const{data:e,repository:erpRepository}=Ml()');
@@ -35,7 +36,7 @@ const posEnd=code.indexOf(';return o.jsxs',posStart);
 patch(code.slice(posStart,posEnd),'I=()=>{try{const lines=d.map(x=>({product_id:x.product_id,name:x.name,sku:x.sku,quantity:x.quantity,unit_price:x.price,total:be(x.price*x.quantity)}));const result=erpRepository.pos({seller:r,branch:a,lines,method:p,tendered:Number(v)});b(result);h([]);w("");j("")}catch(error){j(error.message)}}');
 patch('Opens the dashboard instantly — no account needed.','Open the isolated demo workspace.');
 patch('if(!Kde()){window.location.href="/demo";return}y(Yj,p)','window.location.href="/demo/login"');
-patch('function DOe(){return','const erpUI=erpComponents({React:_,Link:ti,useLocation:ai,useNavigate:Bu,useParams:()=>({feature:ai().pathname.split("/").filter(Boolean).at(-1)}),useDemo:Ml,Heading:Et});function DOe(){if(/^\\/demo(?:\\/|$)/.test(window.location.pathname))return o.jsx(uX,{children:o.jsx(kF,{children:o.jsx(Ze,{path:"/demo/*",element:o.jsx(e2e,{})})})});return');
+patch('function DOe(){return','const erpUI=erpComponents({React:_,Link:ti,useLocation:ai,useNavigate:Bu,useParams:()=>({feature:ai().pathname.split("/").filter(Boolean).at(-1)}),useDemo:Ml,Heading:Et,LoginBrand:Poe});function DOe(){if(/^\\/demo(?:\\/|$)/.test(window.location.pathname))return o.jsx(uX,{children:o.jsx(kF,{children:o.jsx(Ze,{path:"/demo/*",element:o.jsx(e2e,{})})})});return');
 code=code.replaceAll('Nothing is saved; reload to start again.','Changes are saved in this browser.').replaceAll('Nothing is saved: reload to start again.','Changes are saved in this browser.').replaceAll('Nothing is saved.','Changes are saved in this browser.');
 patch('async function BPe({document:e,kind:t,currency:n="QAR",company:r={},filename:i}){var v;',
   'async function BPe({document:e,kind:t,currency:n="QAR",company:r={},filename:i}){if(/^\\/demo(?:\\/|$)/.test(window.location.pathname)&&["127.0.0.1","localhost"].includes(window.location.hostname))return LPe({document:e,kind:t,currency:n,company:r});var v;');

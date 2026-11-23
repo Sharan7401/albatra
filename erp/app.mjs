@@ -1,4 +1,4 @@
-import {features,groups,extraLinks,numberOf} from './catalog.mjs';
+import {features,groups,numberOf} from './catalog.mjs';
 import {createDemoRepository,find,historicalPrice,invoiceBalance,knownStock,locked,permittedActions,purchaseBalance,today} from './repository.mjs';
 import {downloadCSV,mappingFields,previewWorkbook,readWorkbook,sheetHeaders} from './import.mjs';
 import clientSheets from './client-catalogue.mjs';
@@ -12,18 +12,49 @@ const branchName = (state,id)=>id==='IN-TRANSIT'?'In transit':find(state,'branch
 const labelOf = (row,entity)=>entity==='products'?`${row.sku} · ${row.name}`:numberOf(row)===row.name?row.name:`${numberOf(row)}${row.customer_name||row.supplier_name||row.name?` · ${row.customer_name||row.supplier_name||row.name}`:''}`;
 const entityDate = (row)=>row.date || row.invoice_date || row.order_date || row.quote_date || '';
 const searchText = value=>String(value??'').toLowerCase().trim();
-const routeFor=key=>`/demo/operations/${key}`;
+const aliases={customers:'customer-master',suppliers:'supplier-master',branches:'branch-master'};
+const routeEntries=Object.keys(features).filter(key=>key!=='settings').map(key=>[aliases[key]||key,key]);
+const routeFor=key=>`/demo/${aliases[key]||key}`;
+const sidebarDomains={
+  Catalogue:['Inventory'],
+  Sales:['Sales','Quotations'],
+  Procurement:['Purchases'],
+  Warehouse:['Warehouse'],
+  Relationships:['Customers','Suppliers'],
+  Insights:['Reports'],
+  Accounting:['Finance'],
+  Administration:['Administration'],
+};
+const workspaceRoutes={
+  Inventory:'/demo/inventory',Sales:'/demo/invoices',Quotations:'/demo/quotations',Purchases:'/demo/purchases',
+  Warehouse:'/demo/inventory',Customers:'/demo/customers',Suppliers:'/demo/suppliers',Finance:'/demo/ledger',
+  Reports:'/demo/reports',Administration:'/demo/settings',
+};
+const related={
+  '/demo/products':['items','prices','costs','import'],
+  '/demo/inventory':['branch-quantities','stock-receipts','stock-adjustments','transfers'],
+  '/demo/quotations':['quotes','quote-approvals','quote-to-invoice'],
+  '/demo/orders':['sales-invoices','deliveries','delivery-invoices'],
+  '/demo/invoices':['sales-invoices','invoice-returns','invoice-part-payments'],
+  '/demo/purchases':['purchase-quotes','purchase-orders','purchase-receipts','purchase-returns'],
+  '/demo/customers':['customers','customer-pricing','customer-statements','customer-lpos'],
+  '/demo/suppliers':['suppliers','supplier-transactions','supplier-payments'],
+  '/demo/reports':['branch-stock','customer-outstanding','supplier-outstanding','financial-summary'],
+  '/demo/settings':['users','roles','numbering','import'],
+};
 const ordinaryColumns=[['number','Record'],['name','Name / description'],['account','Account / location'],['date','Date'],['status','Status'],['total','Total / qty']];
 const displayStatus=value=>String(value||'').replaceAll('_',' ');
 const emptyLine=()=>({product_id:'',quantity:'1',unit_price:''});
 
-export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,useDemo,Heading}) {
+export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,useDemo,Heading,LoginBrand}) {
   const h=React.createElement;
   const {useState,useEffect,useMemo,useRef,useId}=React;
   const btn=(label,onClick,props={})=>h('button',{type:'button',className:'erp-button',onClick,...props},label);
   const primary=(label,onClick,props={})=>btn(label,onClick,{className:'erp-button erp-primary',...props});
   const link=(label,to,props={})=>h(Link,{to,className:'erp-button',...props},label);
-  const title=(title,subtitle,actions)=>h(Heading,{title,subtitle,crumbs:[{label:'Main Menu',to:'/demo'},{label:title}],actions});
+  const title=(title,subtitle,actions,domain)=>h(Heading,{title,subtitle,crumbs:[
+    {label:'Workspace',to:'/demo'},...(domain?[{label:domain,to:workspaceRoutes[domain]}]:[]),{label:title}
+  ],actions});
   const flash=(message,error=true)=>message&&h('p',{role:error?'alert':'status',className:error?'erp-error':'erp-success'},message);
   const panel=(children,props={})=>h('section',{className:'erp-panel',...props},children);
   const keyFor=(row)=>row.id || numberOf(row);
@@ -73,16 +104,17 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const [name,setName]=useState(data.profile.name||'Demo Operator');
     const [role,setRole]=useState(data.profile.role||'demo-admin');
     const [error,setError]=useState('');
-    return h('div',{className:'erp-login bg-background'},h('div',{className:'erp-login-brand'},
-      h('span',{className:'erp-logo'},'AB'),h('h1',null,'Al Batra ERP'),h('p',null,'البتراء لقطع غيار السيارات'),
-      h('p',null,'Inventory, sales, procurement and finance in one workspace.')),
-      h('main',{className:'erp-login-panel'},h('span',{className:'erp-pill'},'DEMO'),h('h2',null,'Open demo workspace'),
-      h('p',null,'Changes are saved in this browser. This workspace uses demonstration records.'),
-      h('form',{onSubmit:event=>{event.preventDefault();try{repository.profile({name:name.trim(),role});navigate('/demo',{replace:true});}catch(e){setError(e.message);}}},
-        h('label',{className:'erp-field'},'Display name',h('input',{required:true,value:name,maxLength:80,onChange:e=>setName(e.target.value)})),
-        h('label',{className:'erp-field'},'Demo role',h('select',{value:role,onChange:e=>setRole(e.target.value)},data.roles.map(x=>h('option',{key:x.id,value:x.id},x.name)))),
-        flash(error),h('button',{className:'erp-button erp-primary',type:'submit'},'Enter demo')),
-      h('a',{href:'/login',className:'erp-button'},'Staff sign-in')));
+    return h('div',{className:'min-h-screen grid lg:grid-cols-[1.02fr_1fr] bg-background'},
+      h(LoginBrand),
+      h('main',{className:'flex items-center justify-center px-5 py-10 sm:px-10'},
+        h('div',{className:'w-full max-w-[400px] erp-login-panel'},
+          h('div',{className:'lg:hidden flex items-center gap-3'},h('span',{className:'w-10 h-10 rounded-lg bg-brand text-white font-heading font-bold inline-flex items-center justify-center'},'AB'),h('strong',{className:'font-heading'},'AL BATRA')),
+          h('div',null,h('p',{className:'text-[10px] font-bold uppercase tracking-[0.18em] text-brand'},'DEMO WORKSPACE'),h('h1',{className:'font-heading text-[26px] font-extrabold tracking-tight mt-2'},'Open Al Batra'),h('p',{className:'mt-2 text-sm text-muted-foreground'},'Changes are saved in this browser.')),
+          h('form',{className:'erp-space',onSubmit:event=>{event.preventDefault();try{repository.profile({name:name.trim(),role});navigate('/demo',{replace:true});}catch(e){setError(e.message);}}},
+            h('label',{className:'erp-field'},'Display name',h('input',{required:true,value:name,maxLength:80,onChange:e=>setName(e.target.value)})),
+            h('label',{className:'erp-field'},'Demo role',h('select',{value:role,onChange:e=>setRole(e.target.value)},data.roles.map(x=>h('option',{key:x.id,value:x.id},x.name)))),
+            flash(error),h('button',{className:'erp-button erp-primary',type:'submit'},'Enter demo')),
+          h('a',{href:'/login',className:'text-xs font-semibold text-muted-foreground hover:text-brand'},'Staff sign-in'))));
   }
   function TopBar() {
     const {data,repository}=useDemo();
@@ -114,19 +146,33 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       btn(data.profile.name,()=>setProfile(true),{className:'erp-button erp-profile'}),
       profile&&h(Modal,{heading:'Demo profile',onClose:()=>setProfile(false)},h('div',{className:'erp-dialog-body'},h('p',null,data.profile.name),h('label',{className:'erp-field'},'Demo role',h('select',{value:data.profile.role,onChange:e=>change({role:e.target.value})},data.roles.map(x=>h('option',{value:x.id,key:x.id},x.name)))),flash(error),link('Switch demo user','/demo/login'))));
   }
-  function Menu() {
-    const {data,repository}=useDemo();
-    const [query,setQuery]=useState('');
-    const q=searchText(query);
-    const displayed=groups.map(([group,entries])=>[group,entries.filter(v=>!q||searchText(`${group} ${v.label}`).includes(q))]).filter(([,entries])=>entries.length);
-    return h('div',{className:'erp-space'},
-      title('Main Menu','Choose a function to work with the demo catalogue and transactions.',link('Executive Dashboard','/demo/dashboard')),
-      flash(repository.startupError),
-      h('p',{className:'erp-notice'},'DEMO · Changes stay in this browser. Suggested workflows are marked for client validation.'),
-      h('div',{className:'erp-toolbar'},h('input',{value:query,onChange:e=>setQuery(e.target.value),placeholder:'Filter menu functions…','aria-label':'Filter menu functions'}),h('span',null,`${data.products.length} items · ${data.branches.length} branches`)),
-      h('div',{className:'erp-cards'},displayed.map(([group,entries])=>panel([h('h2',{key:'heading'},group),h('ul',{key:'links'},entries.map(x=>h('li',{key:x.key},h(Link,{to:routeFor(x.key)},x.label),x.proposed&&h('span',{title:'Requires client validation',className:'erp-proposed'},'Proposed'))))],{key:group}))),
-      !displayed.length&&h('p',null,'No functions match your search.'),
-      !q&&panel([h('h2',{key:'h'},'Existing workspaces'),h('div',{className:'erp-actions',key:'links'},extraLinks.map(([label,path])=>link(label,'/demo/'+path,{key:path})))]));
+  function SidebarDomain({domain,entries,onNavigate}) {
+    const location=useLocation();
+    const disclosure=useRef(null);
+    const active=entries.some(entry=>routeFor(entry.key)===location.pathname||`/demo/operations/${entry.key}`===location.pathname);
+    useEffect(()=>{if(active&&disclosure.current)disclosure.current.open=true;},[active,location.pathname]);
+    return h('details',{ref:disclosure,className:'erp-sidebar-domain'},
+      h('summary',{className:'erp-sidebar-summary'},domain),
+      h('div',{className:'erp-sidebar-items'},entries.map(entry=>{
+        const href=routeFor(entry.key);
+        const current=location.pathname===href||location.pathname===`/demo/operations/${entry.key}`;
+        return h(Link,{key:entry.key,to:href,onClick:onNavigate,className:'erp-sidebar-link', 'aria-current':current?'page':undefined},entry.label);
+      })));
+  }
+  function SidebarFunctions({group,onNavigate}) {
+    const domains=sidebarDomains[group];
+    if(!domains)return null;
+    return h(React.Fragment,null,domains.map(domain=>{
+      const entries=groups.find(([title])=>title===domain)[1].filter(entry=>entry.key!=='settings');
+      return h(SidebarDomain,{key:domain,domain,entries,onNavigate});
+    }));
+  }
+  function ContextActions() {
+    const {pathname}=useLocation();
+    const keys=related[pathname];
+    if(!keys)return null;
+    return h('nav',{'aria-label':'Related actions',className:'erp-context-actions'},
+      keys.map(key=>link(features[key].label,routeFor(key),{key})));
   }
 
   function RecordForm({feature,state,record,repository,onClose,onSaved}) {
@@ -321,7 +367,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const destination=rows.find(x=>x.id===selected)?.entity;
     return h('div',{className:'erp-space'},
       title(feature.label,feature.proposed?'Proposed workflow · Requires client validation':feature.report?'Review records from the shared demonstration workspace.':'Create, review and process demonstration records.',
-        feature.report?btn('Export CSV',download):primary(feature.master?'New record':'New document',create,{title:'F2'})),
+        feature.report?btn('Export CSV',download):primary(feature.master?'New record':'New document',create,{title:'F2'}),feature.group),
       message&&flash(message,false),
       panel(h('div',{className:'erp-toolbar'},
         h('input',{value:query,onChange:e=>setQuery(e.target.value),placeholder:'Search records…','aria-label':'Search records'}),
@@ -362,7 +408,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       setBusy(true);setError('');setFeedback('');setSheets([]);
       try{setSheets(await readWorkbook(file));setFilename(file.name);setSheetIndex(0);setMapping({});}catch(e){setError(e.message);}finally{setBusy(false);}
     };
-    return h('div',{className:'erp-space'},title('Excel Import & Reset','Import item master rows and supplier references into this browser.',btn('Reset demo',()=>setConfirm('reset'))),
+    return h('div',{className:'erp-space'},title('Excel Import & Reset','Import item master rows and supplier references into this browser.',btn('Reset demo',()=>setConfirm('reset')),'Administration'),
       flash(error),flash(feedback,false),
       panel(h('div',{className:'erp-space'},h('h2',null,'Upload catalogue'),h('p',null,'XLSX or CSV. Original item identifiers are preserved. Opening stock and financial history are outside this importer.'),
         h('input',{type:'file',accept:'.xlsx,.csv',disabled:busy,'aria-label':'Upload catalogue workbook',onChange:e=>load(e.target.files[0])}),busy&&h('p',{role:'status'},'Reading workbook…'))),
@@ -388,10 +434,15 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const feature=features[key];
     const navigate=useNavigate();
     useEffect(()=>{if(feature?.special==='settings')navigate('/demo/settings',{replace:true});},[feature,navigate]);
-    if(!feature)return h('div',{className:'erp-space'},title('Function unavailable','Choose a function in the Main Menu.'),link('Return to Main Menu','/demo'));
+    if(!feature)return h('div',{className:'erp-space'},title('Function unavailable','Choose a function in the sidebar.'),link('Return to Dashboard','/demo'));
     if(feature.special==='settings')return null;
     if(feature.special==='import')return h(ImportScreen);
     return h(Records,{key,feature});
   }
-  return {Login,Menu,Operations,TopBar};
+  const titleFor=pathname=>{
+    const direct=routeEntries.find(([path])=>pathname===`/demo/${path}`)?.[1];
+    const alias=pathname.match(/^\/demo\/operations\/([^/]+)$/)?.[1];
+    return features[direct||alias]?.label;
+  };
+  return {Login,Operations,TopBar,SidebarFunctions,ContextActions,routeEntries,titleFor};
 }
