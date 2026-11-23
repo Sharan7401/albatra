@@ -14,8 +14,9 @@ code='import {createWorkspaceStore as erpStore,makeERPComponents as erpComponent
 const start=code.indexOf('function Mfe({children:e})');
 const end=code.indexOf('function Ml()',start);
 patch(code.slice(start,end), 'const erpDemoRepository=erpStore(Xj);function Mfe({children:e}){const t=_.useSyncExternalStore(erpDemoRepository.subscribe,erpDemoRepository.get),r=_.useMemo(()=>({data:t,repository:erpDemoRepository,...erpDemoRepository}),[t]);return o.jsx(nV.Provider,{value:r,children:e})}');
-const sidebarNavStart=code.indexOf('o.jsx("nav",{className:"flex-1 overflow-y-auto px-3 py-4 space-y-5",children:c2.map');
+const sidebarNavStart=code.indexOf('o.jsx("nav",{className:"flex-1 overflow-y-auto px-3 py-4 space-y-5",children:c2.map(t=>o.jsxs',code.indexOf('function YM('));
 const sidebarNavEnd=code.indexOf(',o.jsxs("div",{className:"border-t border-sidebar-border',sidebarNavStart);
+if(sidebarNavStart<0||sidebarNavEnd<0||sidebarNavEnd>code.indexOf('function $fe()')) throw new Error('Demo sidebar not found.');
 patch(code.slice(sidebarNavStart,sidebarNavEnd),'o.jsx("nav",{className:"flex-1 overflow-y-auto px-3 py-4 space-y-2","aria-label":"Oracle main menu sidebar",children:o.jsx(erpUI.SidebarFunctions,{onNavigate:e})})');
 const shellStart=code.indexOf('function $fe()');
 const shellEnd=code.indexOf('function Et(',shellStart);
