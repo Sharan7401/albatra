@@ -30,6 +30,12 @@ patch(shell,shell
   .replace('children:o.jsx(YM,{})}),e&&','children:o.jsx(YM,{})}),!erpGrid&&e&&')
   .replace('className:"lg:pl-[246px]"','className:erpGrid?"":"lg:pl-[246px]"')
   .replace('o.jsx("button",{onClick:()=>t(!0),className:"lg:hidden','!erpGrid&&o.jsx("button",{onClick:()=>t(!0),className:"lg:hidden'));
+const dashboardChartsStart=code.indexOf('function APe(');
+const dashboardChartsEnd=code.indexOf('function TPe(',dashboardChartsStart);
+const dashboardCharts=code.slice(dashboardChartsStart,dashboardChartsEnd);
+patch(dashboardCharts,dashboardCharts
+  .replace('margin:{top:4,right:4,left:-18,bottom:0}','margin:{top:4,right:8,left:0,bottom:0}')
+  .replace('tick:LS,width:52','tick:LS,width:44,tickFormatter:value=>new Intl.NumberFormat("en",{notation:"compact",maximumFractionDigits:1}).format(value)'));
 const dashboardStart=code.indexOf('function RPe()');
 const dashboardEnd=code.indexOf('function Ai(',dashboardStart);
 patch(code.slice(dashboardStart,dashboardEnd),'function RPe(){const{data}=Ml(),snapshot=_.useMemo(()=>erpUI.dashboardSnapshot(data),[data]),view=_.useMemo(()=>eV(snapshot.data),[snapshot]);return o.jsxs("div",{className:"erp-dashboard",children:[o.jsx(erpUI.DashboardHero,{snapshot}),data.profile.navigation==="grid"&&o.jsx(erpUI.WorkspaceGrid,{}),o.jsx(erpUI.DashboardMetrics,{view}),o.jsx(APe,{view}),o.jsx(erpUI.DashboardOverview,{snapshot}),o.jsx(TPe,{view})]})}');
