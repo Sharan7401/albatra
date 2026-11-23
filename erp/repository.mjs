@@ -55,14 +55,19 @@ function refreshProduct(state,productId) {
 }
 function move(state,row,lines,branch,direction,kind) {
   if ((!find(state,'branches',branch)||isArchived(find(state,'branches',branch))) && branch !== 'IN-TRANSIT') fail('Select a valid branch.');
-  const quantities = new Map();
-  for (const line of lines) quantities.set(line.product_id,(quantities.get(line.product_id)||0)+direction*line.quantity);
-  for (const [product,qty] of quantities) {
+  const movements = new Map();
+  for (const line of lines) {
+    const totals=movements.get(line.product_id)||{quantity:0,receiptValue:0};
+    totals.quantity+=direction*line.quantity;
+    totals.receiptValue+=Number(line.total)||0;
+    movements.set(line.product_id,totals);
+  }
+  for (const [product,{quantity:qty,receiptValue}] of movements) {
     const key = stockKey(product,branch);
     const next = Math.round((knownStock(state,product,branch)+qty)*1000)/1000;
     if (next < 0) fail(`Insufficient stock: ${find(state,'products',product)?.sku} has ${knownStock(state,product,branch)} at this location.`);
     state.stock[key]=next;
-    add(state,'movements',{id:id(),date:row.date || today(),number:numberOf(row),product_id:product,name:find(state,'products',product)?.name,branch_id:branch,quantity:qty,status:kind,source_id:row.id});
+    add(state,'movements',{id:id(),date:row.date || today(),number:numberOf(row),product_id:product,name:find(state,'products',product)?.name,branch_id:branch,quantity:qty,status:kind,source_id:row.id,...(row.receipt_cost?{receipt_value:money(receiptValue),unit_cost:money(receiptValue)/qty}: {})});
     refreshProduct(state,product);
   }
 }
@@ -116,11 +121,12 @@ export const purchaseBalance = row => Math.max(0,money(asNumber(row.bill_total |
 
 const demoAccounts=[
   ['1010','Cash and bank','Asset'],['1100','Trade receivables','Asset'],['1200','Inventory','Asset'],
-  ['2010','Trade payables','Liability'],['4100','Sales revenue','Income'],
+  ['2010','Trade payables','Liability'],['2020','Stock receipt clearing','Liability'],['4100','Sales revenue','Income'],
   ['4200','Other income','Income'],['5100','Operating expenses','Expense'],
   ['5200','Commission expense','Expense'],['4300','Sales credits','Income'],
 ];
 const journalRules={
+  valuedStockReceipt:['1200','2020'],
   invoice:['1100','4100'],purchaseReceipt:['1200','2010'],purchaseReturn:['2010','1200'],
   customerPayment:['1010','1100'],supplierPayment:['2010','1010'],
   customerCredit:['4300','1100'],supplierDebit:['2010','1200'],
@@ -167,7 +173,10 @@ function post(state,feature,row,action) {
       row.status='approved'; return;
     }
     case 'invoice': invoice(state,row); journal(state,row,'invoice',row.total,feature.label);return;
-    case 'stockIn': move(state,row,row.items,row.branch_id,1,'Stock receipt'); break;
+    case 'stockIn':
+      move(state,row,row.items,row.branch_id,1,feature.receiptCost?feature.label:'Stock receipt');
+      if(feature.receiptCost) journal(state,row,'valuedStockReceipt',row.total,feature.label);
+      break;
     case 'stockOut': move(state,row,row.items,row.branch_id,-1,'Store issue'); break;
     case 'adjust': move(state,row,row.items,row.branch_id,row.direction==='Decrease'?-1:1,'Stock adjustment'); break;
     case 'transfer':
@@ -220,7 +229,7 @@ function post(state,feature,row,action) {
     case 'delivery':
       if (row.source_id) {
         const order=sourceFor(state,row,'orders',{party:'customer_id'});
-        if (['completed','delivered','invoiced'].includes(order.status)) fail('This order was already fulfilled.');
+        if (order.invoice_id || ['completed','delivered','invoiced','draft','new','closed','canceled'].includes(order.status)) fail('This order was already fulfilled.');
         const deliveries=state.deliveries.filter(x=>x.source_id===order.id&&['delivered','invoiced'].includes(x.status));
         assertRemaining(order.items,deliveries.flatMap(x=>x.items),row.items);
       }
@@ -250,11 +259,58 @@ function post(state,feature,row,action) {
   journal(state,row,feature.post==='voucher'?feature.entity:feature.post,row.amount??row.total,feature.label);
 }
 
+export function stockReceiptCosts(items, percent) {
+  const rate=Number(percent);
+  if(String(percent??'').trim()===''||!Number.isFinite(rate)||rate<0||rate>100||!items.length) return null;
+  let base=0, surcharge=0;
+  const lines=[];
+  for(const item of items) {
+    const quantity=Number(item.quantity), unitCost=Number(item.unit_price);
+    if(!Number.isFinite(quantity)||quantity<=0||!Number.isFinite(unitCost)||unitCost<0||String(item.unit_price??'').trim()==='') return null;
+    const baseTotal=money(quantity*money(unitCost));
+    base=money(base+baseTotal);
+    const charge=money(money(base*rate/100)-surcharge);
+    surcharge=money(surcharge+charge);
+    const total=money(baseTotal+charge);
+    lines.push({...item,base_total:baseTotal,landed_charge:charge,unit_cost:total/quantity,total});
+  }
+  return {lines,base,surcharge,total:money(base+surcharge)};
+}
+
+export function pendingDeliveriesForYear(state, year) {
+  const inYear=row=>String(row.date||row.order_date||'').startsWith(year+'-');
+  const fulfilled=state.deliveries.filter(row=>['delivered','invoiced'].includes(row.status));
+  const deliveredByOrder=new Map();
+  for(const delivery of fulfilled) {
+    const used=deliveredByOrder.get(delivery.source_id)||new Map();
+    for(const item of delivery.items||[]) used.set(item.product_id,(used.get(item.product_id)||0)+asNumber(item.quantity));
+    deliveredByOrder.set(delivery.source_id,used);
+  }
+  const rows=[];
+  for(const order of state.orders) {
+    if(!inYear(order)||order.invoice_id||['draft','new','cancelled','canceled','void','archived','closed','completed','delivered','invoiced'].includes(order.status)) continue;
+    const used=deliveredByOrder.get(order.id)||new Map();
+    const items=[];
+    for(const line of order.items||[]) {
+      const delivered=Math.min(asNumber(line.quantity),used.get(line.product_id)||0);
+      used.set(line.product_id,(used.get(line.product_id)||0)-delivered);
+      const quantity=asNumber(line.quantity)-delivered;
+      const unit_price=line.unit_price??(Number(line.total)/line.quantity||0);
+      if(quantity>0) items.push({...line,quantity,unit_price,total:money(quantity*unit_price)});
+    }
+    if(items.length) rows.push({...order,items,total:totalFor(items),status:'Awaiting delivery',queueEntity:'orders'});
+  }
+  for(const delivery of fulfilled) {
+    if(inYear(delivery)&&delivery.status==='delivered'&&!delivery.invoice_id) rows.push({...delivery,status:'Awaiting invoice',queueEntity:'deliveries'});
+  }
+  return rows;
+}
+
 export function validate(state,feature,row) {
   for (const f of feature.fields) {
     const v=row[f.key];
     if (f.required && !String(v ?? '').trim()) fail(`${f.label} is required.`);
-    if (v != null && v !== '' && ['money','quantity','cost'].includes(f.type)) {
+    if (v != null && v !== '' && ['money','quantity','cost','percent'].includes(f.type)) {
       if (!Number.isFinite(Number(v)) || Number(v)<0) fail(`${f.label} must be a non-negative number.`);
       row[f.key]=f.type==='money'?money(v):Number(v);
     }
@@ -269,13 +325,22 @@ export function validate(state,feature,row) {
     row.items=row.items.map(line=>{
       const product=find(state,'products',line.product_id);
       const quantity=Number(line.quantity),price=Number(line.unit_price || 0);
-      if (!product || !Number.isFinite(quantity) || quantity<=0 || !Number.isFinite(price) || price<0) fail('Each line needs an item, a positive quantity and a valid price.');
+      if(feature.receiptCost&&String(line.unit_price??'').trim()==='') fail('Enter the unit cost for every receipt line.');
+      if (!product || isArchived(product) || !Number.isFinite(quantity) || quantity<=0 || !Number.isFinite(price) || price<0) fail('Each line needs an item, a positive quantity and a valid price.');
       return {...line,name:product.name,sku:product.sku,quantity,unit_price:money(price),total:money(quantity*price)};
     });
     row.subtotal=totalFor(row.items);
     if (asNumber(row.discount)>row.subtotal) fail('Discount cannot exceed the subtotal.');
     if (asNumber(row.discount)>asNumber(find(state,'roles',state.profile.role)?.discount_limit)) fail('The discount exceeds the current demo role limit.');
     row.total=money(row.subtotal-asNumber(row.discount));
+    if(feature.receiptCost) {
+      const cost=stockReceiptCosts(row.items,feature.receiptCost==='percentage'?row.cost_percent:0);
+      if(!cost) fail('Enter a receipt cost for each line and a percentage from 0 to 100.');
+      row.receipt_cost=feature.receiptCost;
+      row.items=cost.lines;
+      row.surcharge_total=cost.surcharge;
+      row.total=cost.total;
+    }
   }
   if (feature.journal) {
     if (!Array.isArray(row.lines) || row.lines.length<2) fail('Add at least two journal lines.');
@@ -312,6 +377,43 @@ export function permittedActions(feature,row) {
 }
 
 const EXAMPLES_VERSION=1;
+const legacyVersion=()=> 'oracle-menu-1:'+(Number(today().slice(0,4))-1);
+
+function addLegacyExamples(state) {
+  const version=legacyVersion();
+  if(state.legacyExampleVersion===version) return;
+  const year=Number(today().slice(0,4))-1;
+  const branch_id=state.branches.find(row=>!isArchived(row))?.id;
+  const item=state.products.find(row=>row.id==='demo:walkthrough:filter'&&!isArchived(row))||state.products.find(row=>row.origin==='demo-example'&&!isArchived(row));
+  const customer_id=state.customers.find(row=>row.id==='demo:walkthrough:customer'&&!isArchived(row))?.id;
+  if(!branch_id||!item||!customer_id) {
+    state.legacyExampleVersion=version;
+    return;
+  }
+  const product_id=item.id;
+  const supplier_id=state.suppliers.find(row=>row.id==='demo:walkthrough:supplier'&&!isArchived(row))?.id;
+  const common={branch_id,origin:'demo-example'};
+  const orderId='demo:oracle:prior-order:'+year;
+  const examples=[
+    ['srv-variable-cost','DEMO-SRV-VARIABLE',{reference:'DEMO-COST-01',supplier_id,date:today(),items:[{product_id,quantity:6,unit_price:18.75},{product_id,quantity:4,unit_price:21.5}]}],
+    ['srv-percentage','DEMO-SRV-PERCENT',{reference:'DEMO-COST-02',supplier_id,date:today(),cost_percent:7.5,items:[{product_id,quantity:5,unit_price:20}]}],
+    ['deliveries','DEMO-DN-PRIOR-'+year,{date:year+'-12-15',customer_id,source_id:orderId,items:[{product_id,quantity:1,unit_price:45}]}],
+  ];
+  if(!find(state,'orders',orderId)) {
+    add(state,'orders',linkNames(state,{...common,id:orderId,customer_id,order_date:year+'-12-14',order_number:'DEMO-SO-PRIOR-'+year,status:'ready',items:[{product_id,sku:item.sku,name:item.name,quantity:3,unit_price:45,total:135}],total:135}));
+  }
+  for(const [key,number,fields] of examples) {
+    const feature=features[key];
+    const recordId='demo:oracle:'+number;
+    if(find(state,feature.entity,recordId)) continue;
+    const row=linkNames(state,{...common,...fields,id:recordId,number,status:'draft',variant:feature.variant||'',notes:'Oracle menu demo example'});
+    validate(state,feature,row);
+    add(state,feature.entity,row);
+    post(state,feature,row,'post');
+    audit(state,feature,row,'post');
+  }
+  state.legacyExampleVersion=version;
+}
 
 function addWalkthroughExamples(state) {
   if(state.examplesVersion===EXAMPLES_VERSION || !state.branches.length) return;
@@ -447,7 +549,7 @@ export function applyImport(state,preview,filename) {
 export function createDemoRepository(original, imported, storage=globalThis.localStorage, {examples=false}={}) {
   const initial=()=>{
     const fresh=seedState(original(),imported);
-    if(examples) addWalkthroughExamples(fresh);
+    if(examples) {addWalkthroughExamples(fresh);addLegacyExamples(fresh);}
     return fresh;
   };
   let state;
@@ -458,12 +560,17 @@ export function createDemoRepository(original, imported, storage=globalThis.loca
     if(!raw&&examples) { try {storage?.setItem(STORAGE_KEY,JSON.stringify(state));} catch {startupError='Demo examples are available, but browser storage is blocked.';} }
     state.journal??=[];
     state.demoAccounts??=demoAccounts.map(([code,name,account_type])=>({id:code,code,name,account_type}));
+    if(!state.demoAccounts.some(row=>row.code==='2020')) {
+      const [code,name,account_type]=demoAccounts.find(row=>row[0]==='2020');
+      state.demoAccounts.push({id:code,code,name,account_type});
+    }
     if(!Array.isArray(state.products)||!state.stock||!state.profile) fail('Invalid saved demo data.');
   } catch { state=initial();startupError='Saved demo data was unavailable. The sample dataset was opened.'; }
-  if(examples&&state.examplesVersion!==EXAMPLES_VERSION) {
+  if(examples&&(state.examplesVersion!==EXAMPLES_VERSION||state.legacyExampleVersion!==legacyVersion())) {
     try {
       const next=copy(state);
       addWalkthroughExamples(next);
+      addLegacyExamples(next);
       storage?.setItem(STORAGE_KEY,JSON.stringify(next));
       state=next;
     } catch { startupError='The walkthrough examples could not be added. Existing demo records were kept.'; }
@@ -598,7 +705,7 @@ export function dashboardSnapshot(state) {
 
 export function historicalPrice(state,productId,customerId,branchId) {
   const override=state.prices.find(r=>r.product_id===productId && r.customer_id===customerId && r.status==='posted');
-  const related=[...state.invoices].filter(r=>!['draft','cancelled'].includes(r.status)&&r.customer_id===customerId&&(!branchId||r.branch_id===branchId)).sort((a,b)=>String(b.invoice_date||b.date).localeCompare(String(a.invoice_date||a.date)));
+  const related=[...state.invoices].filter(r=>!['draft','cancelled','archived'].includes(r.status)&&r.customer_id===customerId&&(!branchId||r.branch_id===branchId)).sort((a,b)=>String(b.invoice_date||b.date).localeCompare(String(a.invoice_date||a.date)));
   const prior=related.flatMap(r=>r.items||[]).find(r=>r.product_id===productId);
   return override?.selling_price ?? prior?.unit_price ?? find(state,'products',productId)?.selling_price ?? 0;
 }

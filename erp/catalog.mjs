@@ -17,14 +17,20 @@ const lines = {lines:true};
 const report = (key,label,mode) => ({key,label,report:mode});
 const category = field('category','Category','categories');
 const price = field('selling_price','Selling price','money');
+const receiptReference = field('reference','Receipt reference');
+const percent = field('cost_percent','Landed-cost percentage','percent',true);
+const itemMasterFields = [name,field('sku','Internal item code','text',true),field('part_number','Manufacturer part number','text',true),field('oem_number','Original identifier'),field('barcode','Barcode'),field('description_ar','Arabic description','arabic'),field('description','Long description','textarea'),category,field('vehicle_make','Brand','brands'),field('unit','Unit','units'),field('supplier_id','Supplier','suppliers'),field('supersede_id','Superseded by','products'),price,field('cost_price','Average cost','cost'),field('reorder_level','Reorder level','quantity')];
 const simple = (key,label) => master(key,label,key,[name,field('name_ar','Arabic name','arabic'),notes]);
 export const groups = [
   ['Inventory', [
-    master('items','Item Master','products',[name,field('sku','Internal item code','text',true),field('part_number','Manufacturer part number','text',true),field('oem_number','Original identifier'),field('barcode','Barcode'),field('description_ar','Arabic description','arabic'),field('description','Long description','textarea'),category,field('vehicle_make','Brand','brands'),field('unit','Unit','units'),field('supplier_id','Supplier','suppliers'),field('supersede_id','Superseded by','products'),price,field('cost_price','Average cost','cost'),field('reorder_level','Reorder level','quantity')]),
+    master('items','Item Master','products',itemMasterFields),
+    master('custom-item-entry','Customised Item Master Entry','products',[...itemMasterFields.slice(1,3),itemMasterFields[0],...itemMasterFields.slice(3),field('bin_location','Bin / shelf'),notes],{proposed:true}),
     simple('categories','Categories'),simple('brands','Brands'),simple('units','Units'),
     doc('prices','Item Pricing','prices',[item,field('customer_id','Customer override','customers'),{...price,required:true}],{post:'price'}),
     doc('costs','Item Cost Modifications','costs',[item,field('cost_price','New average cost','cost',true)],{post:'cost'}),
     doc('stock-receipts','Stock Receipts','stockReceipts',[branch],{...lines,post:'stockIn'}),
+    doc('srv-variable-cost','SRV with Variable Cost','stockReceipts',[branch,field('supplier_id','Supplier','suppliers'),receiptReference],{...lines,post:'stockIn',variant:'variable-cost',receiptCost:'variable',proposed:true}),
+    doc('srv-percentage','SRV with Percentage','stockReceipts',[branch,field('supplier_id','Supplier','suppliers'),receiptReference,percent],{...lines,post:'stockIn',variant:'percentage',receiptCost:'percentage',proposed:true}),
     doc('stock-adjustments','Stock Adjustments','stockAdjustments',[branch,field('direction','Direction','Increase|Decrease',true)],{...lines,post:'adjust'}),
     report('supersessions','Item Supersessions','supersessions'),report('item-transactions','Item Transactions','movements'),
     report('branch-quantities','Branch Quantities','stock'),report('item-history','Item History','history'),
@@ -50,7 +56,7 @@ export const groups = [
     doc('purchase-orders','Purchase Orders','purchases',[branch,supplier,ref('purchaseQuotes','Supplier quotation',false)],{...lines,post:'purchase',number:'po_number'}),
     doc('purchase-receipts','Purchase Order Receipts','purchaseReceipts',[branch,supplier,ref('purchases','Purchase order')],{...lines,post:'purchaseReceipt'}),
     doc('purchase-returns','Purchase Returns','purchaseReturns',[branch,supplier,ref('purchaseReceipts','Goods receipt')],{...lines,post:'purchaseReturn',proposed:true}),
-    doc('purchase-processing','Purchase Processing','purchases',[branch,supplier,ref('purchaseQuotes','Supplier quotation',false)],{...lines,post:'purchase',number:'po_number',show:'work'}),
+    doc('purchase-processing','Purchase Processing','purchases',[branch,supplier,ref('purchaseQuotes','Supplier quotation',false)],{...lines,post:'purchase',number:'po_number',show:'work',proposed:true}),
   ]],
   ['Warehouse', [
     doc('transfers','Material Transfers','transfers',[branch,field('to_branch_id','Destination branch','branches',true)],{...lines,post:'transfer'}),
@@ -58,6 +64,7 @@ export const groups = [
     doc('online-transfer-receipts','Online Transfer Receipts','transferReceipts',[branch,ref('transfers','Dispatched transfer')],{...lines,post:'transferReceipt',variant:'online',proposed:true}),
     doc('store-issues','Store Issue Vouchers','storeIssues',[branch,field('recipient','Issued to','text',true)],{...lines,post:'stockOut',proposed:true}),
     doc('deliveries','Pre-Invoice Deliveries','deliveries',[branch,customer,ref('orders','Sales order',false)],{...lines,post:'delivery',proposed:true}),
+    {...report('last-year-pending-deliveries','Last Year Pending Deliveries','priorDeliveries'),proposed:true},
     report('invoiced-deliveries','Invoiced Deliveries','invoicedDeliveries'),
     doc('delivery-invoices','Invoice Generation from Delivery','deliveries',[branch,customer,ref('orders','Sales order',false)],{...lines,post:'delivery',show:'conversion',proposed:true}),
   ]],
