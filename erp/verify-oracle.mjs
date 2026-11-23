@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {features} from './catalog.mjs';
-import {createDemoRepository,pendingDeliveriesForYear,stockReceiptCosts,knownStock} from './repository.mjs';
+import {createDemoRepository,pendingDeliveriesForYear,stockReceiptCosts,purchaseStatistics,knownStock} from './repository.mjs';
 
 const menu = [
   [
@@ -60,7 +60,7 @@ const menu = [
     "customer-payment-vouchers"
   ],
   [
-    "Purchase Process…",
+    "Pur Process With Statistics",
     "purchase-processing"
   ],
   [
@@ -183,6 +183,8 @@ for(const [label,key] of menu) {
     assert(rows.some(row=>(!feature.variant||(row.variant||(row.source_id?'linked':'general'))===feature.variant)&&(!feature.remarks||Boolean(row.notes||row.remarks))),label+' must have a walkthrough record');
   }
 }
+const walkthroughPO=data.purchases.find(order=>order.status==='partially_received');
+assert.deepEqual(purchaseStatistics([walkthroughPO]),{openOrders:1,receivedOrders:0,openLines:1,outstandingValue:100});
 const product=data.products.find(item=>item.sku==='DEMO-FLT');
 const variable=features['srv-variable-cost'],percent=features['srv-percentage'];
 const values={branch_id:'a',date:'2026-11-23',items:[{product_id:product.id,quantity:3,unit_price:10},{product_id:product.id,quantity:1,unit_price:13}]};

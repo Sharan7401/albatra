@@ -19,12 +19,12 @@ const category = field('category','Category','categories');
 const price = field('selling_price','Selling price','money');
 const receiptReference = field('reference','Receipt reference');
 const percent = field('cost_percent','Landed-cost percentage','percent',true);
-const itemMasterFields = [name,field('sku','Internal item code','text',true),field('part_number','Manufacturer part number','text',true),field('oem_number','Original identifier'),field('barcode','Barcode'),field('description_ar','Arabic description','arabic'),field('description','Long description','textarea'),category,field('vehicle_make','Brand','brands'),field('unit','Unit','units'),field('supplier_id','Supplier','suppliers'),field('supersede_id','Superseded by','products'),price,field('cost_price','Average cost','cost'),field('reorder_level','Reorder level','quantity')];
+const itemMasterFields = [name,field('sku','Internal item code','text',true),field('part_number','Manufacturer part number','text',true),field('oem_number','Original identifier'),field('barcode','Barcode'),field('description_ar','Arabic description','arabic'),field('description','Long description','textarea'),category,field('vehicle_make','Brand','brands'),field('unit','Unit','units'),field('supplier_id','Supplier','suppliers'),field('supersede_id','Superseded by','products'),price,field('cost_price','Average cost','cost'),field('reorder_level','Reorder level','quantity'),field('bin_location','Bin / shelf')];
 const simple = (key,label) => master(key,label,key,[name,field('name_ar','Arabic name','arabic'),notes]);
 export const groups = [
   ['Inventory', [
     master('items','Item Master','products',itemMasterFields),
-    master('custom-item-entry','Customised Item Master Entry','products',[...itemMasterFields.slice(1,3),itemMasterFields[0],...itemMasterFields.slice(3),field('bin_location','Bin / shelf'),notes],{proposed:true}),
+    master('custom-item-entry','Customised Item Master Entry','products',[...itemMasterFields.slice(1,3),itemMasterFields[0],...itemMasterFields.slice(3),notes],{proposed:true}),
     simple('categories','Categories'),simple('brands','Brands'),simple('units','Units'),
     doc('prices','Item Pricing','prices',[item,field('customer_id','Customer override','customers'),{...price,required:true}],{post:'price'}),
     doc('costs','Item Cost Modifications','costs',[item,field('cost_price','New average cost','cost',true)],{post:'cost'}),
@@ -56,7 +56,7 @@ export const groups = [
     doc('purchase-orders','Purchase Orders','purchases',[branch,supplier,ref('purchaseQuotes','Supplier quotation',false)],{...lines,post:'purchase',number:'po_number'}),
     doc('purchase-receipts','Purchase Order Receipts','purchaseReceipts',[branch,supplier,ref('purchases','Purchase order')],{...lines,post:'purchaseReceipt'}),
     doc('purchase-returns','Purchase Returns','purchaseReturns',[branch,supplier,ref('purchaseReceipts','Goods receipt')],{...lines,post:'purchaseReturn',proposed:true}),
-    doc('purchase-processing','Purchase Processing','purchases',[branch,supplier,ref('purchaseQuotes','Supplier quotation',false)],{...lines,post:'purchase',number:'po_number',show:'work',proposed:true}),
+    doc('purchase-processing','Purchase Processing with Statistics','purchases',[branch,supplier,ref('purchaseQuotes','Supplier quotation',false)],{...lines,post:'purchase',number:'po_number',purchaseStatistics:true,proposed:true}),
   ]],
   ['Warehouse', [
     doc('transfers','Material Transfers','transfers',[branch,field('to_branch_id','Destination branch','branches',true)],{...lines,post:'transfer'}),

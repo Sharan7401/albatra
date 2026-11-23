@@ -1,5 +1,5 @@
 import {features,groups,numberOf} from './catalog.mjs';
-import {canArchive,canEdit,createDemoRepository,dashboardSnapshot,find,isArchived,historicalPrice,invoiceBalance,knownStock,permittedActions,purchaseBalance,pendingDeliveriesForYear,stockReceiptCosts,today} from './repository.mjs';
+import {canArchive,canEdit,createDemoRepository,dashboardSnapshot,find,isArchived,historicalPrice,invoiceBalance,knownStock,permittedActions,purchaseBalance,purchaseLineProgress,purchaseStatistics,pendingDeliveriesForYear,stockReceiptCosts,today} from './repository.mjs';
 import {downloadCSV,mappingFields,previewWorkbook,readWorkbook,sheetHeaders} from './import.mjs';
 import clientSheets from './client-catalogue.mjs';
 
@@ -361,7 +361,12 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
         h('p',{className:'erp-pill'},displayStatus(row.status||'Active')),
         row.origin==='demo-example'&&h('p',{className:'text-xs text-muted-foreground'},'Demo example'),
         h('dl',{className:'erp-details'},feature.fields.filter(f=>row[f.key]!=null&&row[f.key]!=='').map(f=>h('div',{key:f.key},h('dt',null,f.label),h('dd',{dir:f.type==='arabic'?'rtl':undefined},f.type==='money'?money(row[f.key],state.settings.currency):f.type==='percent'?`${row[f.key]}%`:output(f,row[f.key]))))),
-        row.items?.length>0&&h('ul',{className:'erp-item-detail'},row.items.map((x,i)=>h('li',{key:i},`${x.sku||''} ${x.name||''} × ${x.quantity} · ${money(x.total,state.settings.currency)}`))),
+        row.items?.length>0&&(feature.purchaseStatistics?h('table',{className:'erp-table'},
+          h('thead',null,h('tr',null,['Item','Ordered','Received','Outstanding'].map(label=>h('th',{key:label,scope:'col'},label)))),
+          h('tbody',null,row.items.map((item,index)=>{
+            const progress=purchaseLineProgress(item,row.status);
+            return h('tr',{key:index},h('td',null,item.sku||item.name),h('td',null,progress.ordered),h('td',null,progress.received),h('td',null,progress.outstanding));
+          }))):h('ul',{className:'erp-item-detail'},row.items.map((x,i)=>h('li',{key:i},`${x.sku||''} ${x.name||''} × ${x.quantity} · ${money(x.total,state.settings.currency)}`)))),
         row.receipt_cost==='percentage'&&h('p',null,`Base ${money(row.subtotal,state.settings.currency)} · Landed-cost charge ${money(row.surcharge_total,state.settings.currency)}`),
         row.total!=null&&h('p',null,h('strong',null,`Total ${money(row.total,state.settings.currency)}`)),
         !feature.master&&feature.entity==='invoices'&&h('p',null,`Outstanding ${money(invoiceBalance(row),state.settings.currency)}`),
@@ -376,7 +381,8 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
           btn('Print preview',print),
           feature.entity==='purchases'&&['approved','sent','ordered','partially_received'].includes(row.status)&&link('Receive outstanding items',`${routeFor('purchase-receipts')}?new=1&source=${encodeURIComponent(row.id)}`,{onClick:close}),
           permittedActions(feature,row).map(([value,label])=>primary(label,()=>perform(value),{key:value})),
-          feature.entity==='products'&&link('Item transactions',`${routeFor('item-transactions')}?item=${encodeURIComponent(row.id)}`,{onClick:close})),
+          feature.entity==='products'&&[['Item transactions','item-transactions'],['Cost change history','costs'],['Pricing history','prices']].map(([label,key])=>
+            link(label,`${routeFor(key)}?item=${encodeURIComponent(row.id)}`,{key,onClick:close}))),
         confirm&&h('div',{className:'erp-notice'},h('p',null,'This entry will move to Archived and can be restored.'),h('div',{className:'erp-actions'},btn('Cancel',()=>setConfirm(false)),btn(`Confirm ${archiveLabel.toLowerCase()}`,()=>modify(false))))));
   }
 
@@ -476,6 +482,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const partyTable=['customerHistory','customerStatement'].includes(feature.report)?'customers':feature.report==='supplierHistory'?'suppliers':null;
     const destination=rows.find(x=>x.id===selected)?.entity;
     const source=entrySources[feature.report];
+    const stats=feature.purchaseStatistics&&purchaseStatistics(filtered.map(row=>row.record));
     const linkedInvoice=feature.report==='invoicedDeliveries'&&find(data,'invoices',record?.invoice_id);
     const sourceKey=({invoices:'sales-invoices',purchases:'purchase-orders',deliveries:'deliveries',journal:'journal-entries',customerPayments:'customer-receipt-vouchers',supplierPayments:'supplier-payment-vouchers',products:'items'})[destination];
     return h('div',{className:'erp-space'},
@@ -489,6 +496,9 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
         h('select',{value:status,onChange:e=>setStatus(e.target.value),'aria-label':'Filter by status'},h('option',{value:''},'Active records'),[...new Set(rows.map(x=>x.status))].sort().map(x=>h('option',{key:x,value:x},x))),
         partyTable&&h('select',{value:account,onChange:e=>setAccount(e.target.value),'aria-label':'Filter by account'},h('option',{value:''},'All accounts'),data[partyTable].map(x=>h('option',{key:x.id,value:x.id},x.name))),
         h('span',null,`${filtered.length} records`))),
+      stats&&panel(h('div',null,h('h2',null,'Filtered purchase statistics'),h('dl',{className:'erp-details'},
+        [['Open purchase orders',stats.openOrders],['Fully received orders',stats.receivedOrders],['Outstanding lines',stats.openLines],['Outstanding order value',money(stats.outstandingValue,data.settings.currency)]].map(([label,value])=>
+          h('div',{key:label},h('dt',null,label),h('dd',null,value)))))),
       h('div',{className:'erp-table-wrap'},h('table',{className:'erp-table'},
         h('thead',null,h('tr',null,ordinaryColumns.map(([key,label])=>h('th',{key,'aria-sort':sort[0]!==key?'none':sort[1]===1?'ascending':'descending'},btn(label+(sort[0]===key?(sort[1]===1?' ↑':' ↓'):''),()=>setSort([key,sort[0]===key?-sort[1]:1]),{className:'erp-sort'}))),!feature.report&&h('th',{scope:'col'},'Actions'))),
         h('tbody',null,filtered.slice((page-1)*20,page*20).map(row=>{

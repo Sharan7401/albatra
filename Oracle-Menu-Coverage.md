@@ -1,6 +1,6 @@
 # Oracle Main Menu coverage
 
-The visible AL BATRA Oracle Main Menu screenshot contains 41 labeled business functions. A meeting overlay obscures part of the last column and the full Purchase Process label. The recording itself is not available for verification.
+The visible AL BATRA Oracle Main Menu screenshot contains 41 labeled business functions. The recording shows the full label “Pur Process With Statistics” near 33:00. Sampled portions also show Item Details and cost change history, sales entry and transfer information. The menu labels and screen samples do not establish the exact SRV calculation rules.
 
 Open the routes below from the deployed preview or search for the function in the workspace. Remarks, settlement, and processing views share business records with their primary routes.
 
@@ -20,7 +20,7 @@ Open the routes below from the deployed preview or search for the function in th
 | 12 | Purchase Order Receipt | `/demo/purchase-receipts` |
 | 13 | General Sales Return | `/demo/sales-returns` |
 | 14 | Customer Payment Voucher | `/demo/customer-payment-vouchers` |
-| 15 | Purchase Process… | `/demo/purchase-processing` |
+| 15 | Pur Process With Statistics | `/demo/purchase-processing` |
 | 16 | Stock Received Voucher | `/demo/stock-receipts` |
 | 17 | Material Transfer Receipt | `/demo/transfer-receipts` |
 | 18 | Purchase Returns | `/demo/purchase-returns` |
@@ -54,7 +54,7 @@ Open the routes below from the deployed preview or search for the function in th
 - **SRV with Variable Cost**. Unit acquisition cost is entered per line. Posting stores movement valuation and a balanced clearing entry.
 - **SRV with Percentage**. Proposed formula applies a 0–100% landed-cost charge to the receipt’s base value, allocated by line value to the currency cent.
 - **Last Year Pending Deliveries**. Previous calendar year. Open orders show remaining quantities. Delivered records awaiting invoicing open the conversion workflow.
-- **Purchase Process…**. Existing purchase workflow with a prefilled outstanding receipt action. Exact label and alternate behavior are obscured in the screenshot.
+- **Pur Process With Statistics**. Shows filtered counts of open and fully received orders, outstanding lines, outstanding order value, and per-line receipt progress. Receive opens a prefilled draft. The choice of statistics remains a prototype.
 - **Invoiced Delivery Details**. Open the posted delivery or linked invoice from report detail.
 
 The preview uses synthetic transactions. The Oracle documentation describes [receipt costing](https://docs.oracle.com/en/cloud/saas/supply-chain-and-manufacturing/25d/fapma/purchase-order-receipts.html), [value-based landed-cost allocation](https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/section_N2418831.html), and [separate fulfillment and billing statuses](https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/section_N1220604.html). These are design references for the demo. The exact operating rules behind the AL BATRA buttons require review with the client.

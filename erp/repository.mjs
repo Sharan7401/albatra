@@ -277,6 +277,28 @@ export function stockReceiptCosts(items, percent) {
   return {lines,base,surcharge,total:money(base+surcharge)};
 }
 
+export function purchaseLineProgress(line, orderStatus) {
+  const ordered=asNumber(line.quantity);
+  const received=Math.min(ordered,Math.max(0,asNumber(line.received_qty??(orderStatus==='received'?ordered:0))));
+  return {ordered,received,outstanding:Math.max(0,ordered-received)};
+}
+
+export function purchaseStatistics(orders) {
+  const totals={openOrders:0,receivedOrders:0,openLines:0,outstandingValue:0};
+  for(const order of orders) {
+    if(order.status==='received') totals.receivedOrders++;
+    if(!['approved','sent','ordered','partially_received'].includes(order.status)) continue;
+    const open=order.items?.filter(line=>purchaseLineProgress(line,order.status).outstanding>0)||[];
+    if(open.length) totals.openOrders++;
+    totals.openLines+=open.length;
+    for(const line of open) {
+      totals.outstandingValue+=money(purchaseLineProgress(line,order.status).outstanding*asNumber(line.unit_price??line.unit_cost??(Number(line.total)/line.quantity||0)));
+    }
+  }
+  totals.outstandingValue=money(totals.outstandingValue);
+  return totals;
+}
+
 export function pendingDeliveriesForYear(state, year) {
   const inYear=row=>String(row.date||row.order_date||'').startsWith(year+'-');
   const fulfilled=state.deliveries.filter(row=>['delivered','invoiced'].includes(row.status));
