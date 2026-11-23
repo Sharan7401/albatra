@@ -89,6 +89,7 @@ export const groups = [
     doc('income-returns','Income Returns','incomeReturns',[branch,ref('income','Income voucher'),amount],{post:'voucher',proposed:true}),
     doc('credit-notes','Customer Credit Notes','customerCredits',[branch,customer,ref('invoices','Invoice'),amount],{post:'customerCredit',proposed:true}),
     doc('debit-notes','Supplier Debit Notes','supplierDebitNotes',[branch,supplier,ref('purchases','Purchase order / bill'),amount],{post:'supplierDebit',proposed:true}),
+    doc('journal-entries','Journal Entries','journal',[branch,field('name','Description','text',true)],{journal:true,post:'manualJournal'}),
   ]],
   ['Reports', [
     report('inventory-report','Inventory Reports','stock'),report('movement-report','Stock Movements','movements'),

@@ -1,5 +1,5 @@
 import {features,groups,numberOf} from './catalog.mjs';
-import {createDemoRepository,dashboardSnapshot,find,historicalPrice,invoiceBalance,knownStock,locked,permittedActions,purchaseBalance,today} from './repository.mjs';
+import {canArchive,canEdit,createDemoRepository,dashboardSnapshot,find,isArchived,historicalPrice,invoiceBalance,knownStock,permittedActions,purchaseBalance,today} from './repository.mjs';
 import {downloadCSV,mappingFields,previewWorkbook,readWorkbook,sheetHeaders} from './import.mjs';
 import clientSheets from './client-catalogue.mjs';
 
@@ -50,6 +50,22 @@ const related={
   '/demo/reports':['branch-stock','customer-outstanding','supplier-outstanding','financials'],
   '/demo/settings':['users','roles','numbering','import'],
 };
+const entrySources={
+  stock:['stock-receipts','New stock receipt'],
+  movements:['stock-adjustments','New stock adjustment'],
+  journal:['journal-entries','New journal entry'],
+  supersessions:['items','New item'],
+  sales:['sales-invoices','New invoice'],
+  purchases:['purchase-orders','New purchase order'],
+  receivables:['customer-receipt-vouchers','New customer receipt'],
+  payables:['supplier-payment-vouchers','New supplier payment'],
+  financial:['journal-entries','New journal entry'],
+  customerStatement:['customer-receipt-vouchers','New customer receipt'],
+  customerHistory:['customer-receipt-vouchers','New customer receipt'],
+  supplierHistory:['supplier-payment-vouchers','New supplier payment'],
+  invoicedDeliveries:['deliveries','New delivery'],
+  history:['stock-receipts','New stock receipt'],
+};
 const ordinaryColumns=[['number','Record'],['name','Name / description'],['account','Account / location'],['date','Date'],['status','Status'],['total','Total / qty']];
 const displayStatus=value=>String(value||'').replaceAll('_',' ');
 const emptyLine=()=>({product_id:'',quantity:'1',unit_price:''});
@@ -83,7 +99,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     let content;
     if(Array.isArray(list)&&field.type==='products') content=h(ItemLookup,{state,value,onChange,inputId,label:field.label,required:field.required});
     else if(Array.isArray(list)||field.type.includes('|')) {
-      const options=Array.isArray(list)?list.map(x=>[x.id,labelOf(x,field.type)]):field.type.split('|').map(x=>[x,x]);
+      const options=Array.isArray(list)?list.filter(x=>!isArchived(x)||x.id===value).map(x=>[x.id,labelOf(x,field.type)]):field.type.split('|').map(x=>[x,x]);
       content=h('select',props,h('option',{value:''},'Select…'),options.map(([id,label])=>h('option',{key:id,value:id},label)));
     } else if(field.type==='textarea') content=h('textarea',{...props,rows:3});
     else {
@@ -121,7 +137,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
           h('div',null,h('p',{className:'text-[10px] font-bold uppercase tracking-[0.18em] text-brand'},'DEMO WORKSPACE'),h('h1',{className:'font-heading text-[26px] font-extrabold tracking-tight mt-2'},'Open Al Batra'),h('p',{className:'mt-2 text-sm text-muted-foreground'},'Changes are saved in this browser.')),
           h('form',{className:'erp-space',onSubmit:event=>{event.preventDefault();try{repository.profile({name:name.trim(),role});navigate('/demo',{replace:true});}catch(e){setError(e.message);}}},
             h('label',{className:'erp-field'},'Display name',h('input',{required:true,value:name,maxLength:80,onChange:e=>setName(e.target.value)})),
-            h('label',{className:'erp-field'},'Demo role',h('select',{value:role,onChange:e=>setRole(e.target.value)},data.roles.map(x=>h('option',{key:x.id,value:x.id},x.name)))),
+            h('label',{className:'erp-field'},'Demo role',h('select',{value:role,onChange:e=>setRole(e.target.value)},data.roles.filter(x=>!isArchived(x)).map(x=>h('option',{key:x.id,value:x.id},x.name)))),
             flash(error),h('button',{className:'erp-button erp-primary',type:'submit'},'Enter demo')),
           h('a',{href:'/login',className:'text-xs font-semibold text-muted-foreground hover:text-brand'},'Staff sign-in'))));
   }
@@ -152,13 +168,13 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       h('form',{className:'erp-search',onSubmit:e=>{e.preventDefault();if(first)navigate(first);}},
         h('input',{ref:input,placeholder:'Search functions or items',value:query,onFocus:()=>setOpen(true),onChange:e=>{setQuery(e.target.value);setOpen(true);},'aria-label':'Global search'}),
         open&&q&&h('div',{className:'erp-search-results'},modules.map(x=>link(x.label,routeFor(x.key),{key:x.key})),items.map(x=>link(labelOf(x,'products'),`${routeFor('items')}?record=${encodeURIComponent(x.id)}`,{key:x.id})),!first&&h('p',null,'No matches.'))),
-      h('select',{value:data.profile.branch_id,'aria-label':'Workspace branch',onChange:e=>change({branch_id:e.target.value})},h('option',{value:'all'},'All branches'),data.branches.map(x=>h('option',{key:x.id,value:x.id},x.name))),
+      h('select',{value:data.profile.branch_id,'aria-label':'Workspace branch',onChange:e=>change({branch_id:e.target.value})},h('option',{value:'all'},'All branches'),data.branches.filter(x=>!isArchived(x)).map(x=>h('option',{key:x.id,value:x.id},x.name))),
       h('div',{className:'erp-mode-toggle',role:'group','aria-label':'Navigation view'},
         btn('Sidebar',()=>{change({navigation:'sidebar'});setGridOpen(false);},{'aria-pressed':data.profile.navigation!=='grid'}),
         btn('Grid',()=>{change({navigation:'grid'});if(!['/demo','/demo/dashboard'].includes(location.pathname))setGridOpen(true);},{'aria-pressed':data.profile.navigation==='grid'})),
       gridOpen&&data.profile.navigation==='grid'&&h(Modal,{heading:'ERP workspaces',onClose:()=>setGridOpen(false)},h('div',{className:'erp-dialog-body'},h(WorkspaceGrid,{onNavigate:()=>setGridOpen(false)}))),
       btn(data.profile.name,()=>setProfile(true),{className:'erp-button erp-profile'}),
-      profile&&h(Modal,{heading:'Demo profile',onClose:()=>setProfile(false)},h('div',{className:'erp-dialog-body'},h('p',null,data.profile.name),h('label',{className:'erp-field'},'Demo role',h('select',{value:data.profile.role,onChange:e=>change({role:e.target.value})},data.roles.map(x=>h('option',{value:x.id,key:x.id},x.name)))),flash(error),link('Switch demo user','/demo/login'))));
+      profile&&h(Modal,{heading:'Demo profile',onClose:()=>setProfile(false)},h('div',{className:'erp-dialog-body'},h('p',null,data.profile.name),h('label',{className:'erp-field'},'Demo role',h('select',{value:data.profile.role,onChange:e=>change({role:e.target.value})},data.roles.filter(x=>!isArchived(x)).map(x=>h('option',{value:x.id,key:x.id},x.name)))),flash(error),link('Switch demo user','/demo/login'))));
   }
   function SidebarDomain({domain,entries,onNavigate}) {
     const location=useLocation();
@@ -234,7 +250,8 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const [form,setForm]=useState(()=>({
       ...record,
       ...(feature.fields.some(f=>f.key==='date')?{date:entityDate(record||{})||today()}:{}),
-      ...(feature.fields.some(f=>f.key==='branch_id')?{branch_id:record?.branch_id||(state.profile.branch_id==='all'?state.branches[0]?.id:state.profile.branch_id)}:{}),
+      ...(feature.fields.some(f=>f.key==='branch_id')?{branch_id:record?.branch_id||(state.profile.branch_id==='all'?state.branches.find(branch=>!isArchived(branch))?.id:state.profile.branch_id)}:{}),
+      ...(feature.journal?{lines:record?.lines||[{account:'',debit:'',credit:''},{account:'',debit:'',credit:''}]}:{}),
       ...(feature.lines?{items:record?.items?.map(x=>({...x,unit_price:x.unit_price??x.unit_cost??((x.total||0)/x.quantity||0)}))||[emptyLine()]}:{})
     }));
     const [error,setError]=useState('');
@@ -269,6 +286,11 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
             h('label',{className:'erp-field'},'Unit price',h('input',{type:'number',min:0,step:'any',value:x.unit_price,onChange:e=>changeLine(i,'unit_price',e.target.value)})),
             btn('Remove line',()=>set('items',form.items.filter((_,index)=>index!==i)),{disabled:form.items.length===1})))),
           h('div',{className:'erp-toolbar'},btn('Add line',()=>set('items',[...form.items,emptyLine()])),h('strong',null,money(form.items.reduce((sum,x)=>sum+Number(x.quantity||0)*Number(x.unit_price||0),0)-Number(form.discount||0),state.settings.currency)))),
+        feature.journal&&h('div',{className:'erp-space'},h('h3',null,'Journal lines'),
+          form.lines.map((line,index)=>h('div',{className:'erp-line',key:index},
+            ...[{key:'account',label:'Account',type:'demoAccounts',required:true},{key:'debit',label:'Debit',type:'money'},{key:'credit',label:'Credit',type:'money'}].map(field=>h(Entry,{key:field.key,field,state,value:line[field.key],onChange:value=>set('lines',form.lines.map((row,i)=>i===index?{...row,[field.key]:value}:row))})),
+            btn('Remove line',()=>set('lines',form.lines.filter((_,i)=>i!==index)),{disabled:form.lines.length<=2}))),
+          btn('Add journal line',()=>set('lines',[...form.lines,{account:'',debit:'',credit:''}]))),
         flash(error),h('div',{className:'erp-actions'},btn('Cancel',onClose),h('button',{type:'submit',className:'erp-button erp-primary'},feature.master?'Save record':'Save draft'))));
   }
 
@@ -308,8 +330,17 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
           row.barcode&&h(Barcode,{value:row.barcode}),
           h('p',{className:'erp-print-foot'},'Al Batra · Demonstration document'))));
   }
-  function Detail({feature,state,row,repository,close,edit,print}) {
+  function Detail({feature,state,row,repository,close,edit,print,onChanged}) {
     const [error,setError]=useState('');
+    const [confirm,setConfirm]=useState(false);
+    const archiveLabel=feature.master?'Archive record':'Remove draft';
+    const modify=restore=>{
+      try {
+        if(restore) repository.restore(feature,row.id);
+        else repository.archive(feature,row.id);
+        onChanged(restore?'Record restored.':feature.master?'Record archived.':'Draft removed. You can restore it from Archived.');
+      }catch(err){setError(err.message);setConfirm(false);}
+    };
     const perform=action=>{
       try{repository.action(feature,row.id,action);setError('');}
       catch(err){setError(err.message);}
@@ -330,10 +361,13 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
         linkedInvoice&&link(`Open ${numberOf(linkedInvoice)}`,`${routeFor('sales-invoices')}?record=${encodeURIComponent(linkedInvoice.id)}`,{onClick:close}),
         flash(error),
         h('div',{className:'erp-actions'},
-          (feature.master||!locked(row))&&btn('Edit',edit),
+          canEdit(feature,row)&&btn('Edit',edit),
+          isArchived(row)&&btn('Restore record',()=>modify(true)),
+          !confirm&&canArchive(feature,row)&&btn(archiveLabel,()=>setConfirm(true)),
           btn('Print preview',print),
           permittedActions(feature,row).map(([value,label])=>primary(label,()=>perform(value),{key:value})),
-          feature.entity==='products'&&link('Item transactions',`${routeFor('item-transactions')}?item=${encodeURIComponent(row.id)}`,{onClick:close}))));
+          feature.entity==='products'&&link('Item transactions',`${routeFor('item-transactions')}?item=${encodeURIComponent(row.id)}`,{onClick:close})),
+        confirm&&h('div',{className:'erp-notice'},h('p',null,'This entry will move to Archived and can be restored.'),h('div',{className:'erp-actions'},btn('Cancel',()=>setConfirm(false)),btn(`Confirm ${archiveLabel.toLowerCase()}`,()=>modify(false))))));
   }
 
   function matchedRows(state,feature) {
@@ -356,13 +390,13 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const scopedPosted=rows=>posted(rows).filter(inScope);
     const priced=(rows,kind)=>view(rows,kind).map(x=>({...x,total:x.record.amount??x.record.total??0}));
     const history=()=>view(state.activity,'activity');
-    const stock=()=>state.products.flatMap(p=>[...state.branches,...(knownStock(state,p.id,'IN-TRANSIT')?[{id:'IN-TRANSIT',name:'In transit'}]:[])].map(b=>({id:`${p.id}|${b.id}`,record:p,number:p.sku,name:p.name,account:b.name,branch_id:b.id,date:'',status:knownStock(state,p.id,b.id)>asPositive(p.reorder_level)?'Available':'Low / zero',total:knownStock(state,p.id,b.id),entity:'products'})));
-    const invoices=state.invoices.filter(x=>!['draft','cancelled'].includes(x.status));
-    const purchases=state.purchases.filter(x=>!['draft','cancelled'].includes(x.status));
+    const stock=()=>state.products.filter(p=>!isArchived(p)).flatMap(p=>[...state.branches,...(knownStock(state,p.id,'IN-TRANSIT')?[{id:'IN-TRANSIT',name:'In transit'}]:[])].map(b=>({id:`${p.id}|${b.id}`,record:p,number:p.sku,name:p.name,account:b.name,branch_id:b.id,date:'',status:knownStock(state,p.id,b.id)>asPositive(p.reorder_level)?'Available':'Low / zero',total:knownStock(state,p.id,b.id),entity:'products'})));
+    const invoices=state.invoices.filter(x=>!['draft','cancelled','archived'].includes(x.status));
+    const purchases=state.purchases.filter(x=>!['draft','cancelled','archived'].includes(x.status));
     switch(mode) {
       case 'stock':return stock();
       case 'movements':return view(state.movements,'movements');
-      case 'journal':return view(state.journal,'journal');
+      case 'journal':return view(posted(state.journal),'journal');
       case 'supersessions':return view(state.products.filter(x=>x.supersede_id||x.supersede_number),'products').map(x=>({...x,total:numberOf(find(state,'products',x.record.supersede_id))||x.record.supersede_number,status:'Superseded'}));
       case 'sales':return priced(invoices,'invoices');
       case 'purchases':return priced(purchases,'purchases');
@@ -391,6 +425,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
   function Records({feature}) {
     const {data,repository}=useDemo();
     const location=useLocation();
+    const navigate=useNavigate();
     const [query,setQuery]=useState('');
     const [status,setStatus]=useState('');
     const [account,setAccount]=useState('');
@@ -404,6 +439,13 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const itemParam=search.get('item');
     const detailParam=search.get('record');
     useEffect(()=>{if(detailParam){setSelected(detailParam);setMode('detail');}},[detailParam]);
+    const newParam=search.get('new');
+    useEffect(()=>{
+      if(newParam==='1'&&!feature.report){
+        setSelected(null);setMode('form');
+        navigate(location.pathname,{replace:true});
+      }
+    },[newParam,feature,location.pathname,navigate]);
     useEffect(()=>{setPagination(1);},[query,status,account,scope,data.profile.branch_id]);
     useEffect(()=>{
       if(feature.report) return;
@@ -412,7 +454,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     },[mode,feature]);
     const branch=scope==='workspace'?data.profile.branch_id:scope;
     const rows=useMemo(()=>feature.report?reportRows(data,feature.report,branch):matchedRows(data,feature).map(row=>toRow(data,row,feature.entity)),[data,feature,branch]);
-    const filtered=rows.filter(row=>(!query||Object.values(row).some(x=>typeof x!=='object'&&searchText(x).includes(searchText(query)))||searchText(`${row.record.sku||''} ${row.record.part_number||''} ${row.record.description_ar||''}`).includes(searchText(query)))&&(!status||row.status===status)&&(!account||[row.record.customer_id,row.record.supplier_id].includes(account))&&(!itemParam||row.record.product_id===itemParam||row.record.items?.some(x=>x.product_id===itemParam))&&(branch==='all'||!row.branch_id||row.branch_id===branch));
+    const filtered=rows.filter(row=>(!query||Object.values(row).some(x=>typeof x!=='object'&&searchText(x).includes(searchText(query)))||searchText(`${row.record.sku||''} ${row.record.part_number||''} ${row.record.description_ar||''}`).includes(searchText(query)))&&(status?row.status===status:!isArchived(row.record))&&(!account||[row.record.customer_id,row.record.supplier_id].includes(account))&&(!itemParam||row.record.product_id===itemParam||row.record.items?.some(x=>x.product_id===itemParam))&&(branch==='all'||!row.branch_id||row.branch_id===branch));
     filtered.sort((a,b)=>typeof a[sort[0]]==='number'&&typeof b[sort[0]]==='number'?(a[sort[0]]-b[sort[0]])*sort[1]:String(a[sort[0]]??'').localeCompare(String(b[sort[0]]??''),undefined,{numeric:true})*sort[1]);
     const pages=Math.max(1,Math.ceil(filtered.length/20)),page=Math.min(pages,pagination);
     const record=feature.report?rows.find(x=>x.id===selected)?.record:find(data,feature.entity,selected);
@@ -421,27 +463,44 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const download=()=>downloadCSV(feature.key+'.csv',[ordinaryColumns.map(([,name])=>name),...filtered.map(row=>ordinaryColumns.map(([key])=>row[key]))]);
     const partyTable=['customerHistory','customerStatement'].includes(feature.report)?'customers':feature.report==='supplierHistory'?'suppliers':null;
     const destination=rows.find(x=>x.id===selected)?.entity;
+    const source=entrySources[feature.report];
+    const sourceKey=({invoices:'sales-invoices',purchases:'purchase-orders',deliveries:'deliveries',journal:'journal-entries',customerPayments:'customer-receipt-vouchers',supplierPayments:'supplier-payment-vouchers',products:'items'})[destination];
     return h('div',{className:'erp-space'},
       title(feature.label,feature.proposed?'Proposed workflow · Requires client validation':feature.report?'Review records from the shared demonstration workspace.':'Create, review and process demonstration records.',
-        feature.report?btn('Export CSV',download):primary(feature.master?'New record':'New document',create,{title:'F2'}),feature.group),
+        feature.report?h('div',{className:'erp-actions'},source&&link(source[1],routeFor(source[0])+'?new=1'),btn('Export CSV',download)):
+        primary('New entry',create,{title:'F2'}),feature.group),
       message&&flash(message,false),
       panel(h('div',{className:'erp-toolbar'},
         h('input',{value:query,onChange:e=>setQuery(e.target.value),placeholder:'Search records…','aria-label':'Search records'}),
-        h('select',{value:scope,onChange:e=>setScope(e.target.value),'aria-label':'Filter records by branch'},h('option',{value:'workspace'},'Workspace branch'),h('option',{value:'all'},'All branches'),data.branches.map(x=>h('option',{key:x.id,value:x.id},x.name)),h('option',{value:'IN-TRANSIT'},'In transit')),
-        h('select',{value:status,onChange:e=>setStatus(e.target.value),'aria-label':'Filter by status'},h('option',{value:''},'All statuses'),[...new Set(rows.map(x=>x.status))].sort().map(x=>h('option',{key:x,value:x},x))),
+        h('select',{value:scope,onChange:e=>setScope(e.target.value),'aria-label':'Filter records by branch'},h('option',{value:'workspace'},'Workspace branch'),h('option',{value:'all'},'All branches'),data.branches.filter(x=>!isArchived(x)).map(x=>h('option',{key:x.id,value:x.id},x.name)),h('option',{value:'IN-TRANSIT'},'In transit')),
+        h('select',{value:status,onChange:e=>setStatus(e.target.value),'aria-label':'Filter by status'},h('option',{value:''},'Active records'),[...new Set(rows.map(x=>x.status))].sort().map(x=>h('option',{key:x,value:x},x))),
         partyTable&&h('select',{value:account,onChange:e=>setAccount(e.target.value),'aria-label':'Filter by account'},h('option',{value:''},'All accounts'),data[partyTable].map(x=>h('option',{key:x.id,value:x.id},x.name))),
         h('span',null,`${filtered.length} records`))),
       h('div',{className:'erp-table-wrap'},h('table',{className:'erp-table'},
-        h('thead',null,h('tr',null,ordinaryColumns.map(([key,label])=>h('th',{key,'aria-sort':sort[0]!==key?'none':sort[1]===1?'ascending':'descending'},btn(label+(sort[0]===key?(sort[1]===1?' ↑':' ↓'):''),()=>setSort([key,sort[0]===key?-sort[1]:1]),{className:'erp-sort'}))))),
-        h('tbody',null,filtered.slice((page-1)*20,page*20).map(row=>h('tr',{key:row.id},ordinaryColumns.map(([key])=>h('td',{key},key==='number'?h(React.Fragment,null,btn(row.number||'View details',()=>{setSelected(row.id);setMode('detail');},{className:'erp-record-link'}),row.record.origin==='demo-example'&&h('span',{className:'erp-example-label'},'Demo')):key==='total'&&moneyContext(feature,row)?money(row.total,data.settings.currency):String(row[key]??'')||'—')))),
-          !filtered.length&&h('tr',null,h('td',{colSpan:6},feature.report?'No records match. Post a demo transaction to populate this report.':'No records match. Create a demo record or clear your filters.'))))),
+        h('thead',null,h('tr',null,ordinaryColumns.map(([key,label])=>h('th',{key,'aria-sort':sort[0]!==key?'none':sort[1]===1?'ascending':'descending'},btn(label+(sort[0]===key?(sort[1]===1?' ↑':' ↓'):''),()=>setSort([key,sort[0]===key?-sort[1]:1]),{className:'erp-sort'}))),!feature.report&&h('th',{scope:'col'},'Actions'))),
+        h('tbody',null,filtered.slice((page-1)*20,page*20).map(row=>{
+          const display=row.number||row.name;
+          const view=()=>{setSelected(row.id);setMode('detail');};
+          const edit=()=>{setSelected(row.id);setMode('form');};
+          const cells=ordinaryColumns.map(([key])=>{
+            let value;
+            if(key==='number') value=h(React.Fragment,null,btn(display||'View details',view,{className:'erp-record-link'}),row.record.origin==='demo-example'&&h('span',{className:'erp-example-label'},'Demo'));
+            else if(key==='total'&&moneyContext(feature,row))value=money(row.total,data.settings.currency);
+            else value=String(row[key]??'')||'—';
+            return h('td',{key},value);
+          });
+          if(!feature.report)cells.push(h('td',{key:'actions'},h('div',{className:'erp-actions'},
+            btn('View',view,{'aria-label':`View ${display}`}),canEdit(feature,row.record)&&btn('Edit',edit,{'aria-label':`Edit ${display}`}))));
+          return h('tr',{key:row.id},cells);
+        }),
+          !filtered.length&&h('tr',null,h('td',{colSpan:feature.report?6:7},feature.report?'No records match. Post a demo transaction to populate this report.':'No records match. Create a demo record or clear your filters.'))))),
       h('div',{className:'erp-toolbar'},h('span',null,`Page ${page} of ${pages}`),h('div',{className:'erp-actions'},btn('Previous',()=>setPagination(page-1),{disabled:page===1}),btn('Next',()=>setPagination(page+1),{disabled:page===pages}))),
       mode==='form'&&h(RecordForm,{feature,state:data,record,repository,onClose:close,onSaved:id=>{setSelected(id);setMode('detail');setMessage('Saved in this demo.');}}),
-      mode==='detail'&&record&&!feature.report&&h(Detail,{feature,state:data,row:record,repository,close,edit:()=>setMode('form'),print:()=>setMode('print')}),
+      mode==='detail'&&record&&!feature.report&&h(Detail,{feature,state:data,row:record,repository,close,edit:()=>setMode('form'),print:()=>setMode('print'),onChanged:text=>{close();setMessage(text);}}),
       mode==='detail'&&record&&feature.report&&h(Modal,{heading:numberOf(record)||record.name||feature.label,onClose:close},
         h('div',{className:'erp-dialog-body erp-space'},h('dl',{className:'erp-details'},Object.entries(record).filter(([k,v])=>v!=null&&typeof v!=='object'&&k!=='id').map(([key,value])=>h('div',{key},h('dt',null,key.replaceAll('_',' ')),h('dd',null,String(value))))),record.lines?.length>0&&h('ul',{className:'erp-item-detail'},record.lines.map((x,i)=>h('li',{key:i},`${x.account} ${x.account_name} · Debit ${money(x.debit)} · Credit ${money(x.credit)}`))),h('div',{className:'erp-actions'},btn('Print preview',()=>setMode('print')),
         destination==='products'&&link('Open Item Master',`${routeFor('items')}?record=${encodeURIComponent(record.id)}`,{onClick:close}),
-        ['invoices','purchases','deliveries'].includes(destination)&&link('Open source',`${routeFor(({invoices:'sales-invoices',purchases:'purchase-orders',deliveries:'deliveries'})[destination])}?record=${encodeURIComponent(record.id)}`,{onClick:close})))),
+        sourceKey&&destination!=='products'&&link('Open source',`${routeFor(sourceKey)}?record=${encodeURIComponent(record.id)}`,{onClick:close})))),
       mode==='print'&&record&&h(PrintView,{feature,row:record,state:data,onClose:()=>setMode('detail')}));
   }
 
@@ -484,6 +543,27 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
         h('div',{className:'erp-actions'},btn('Cancel',()=>setConfirm('')),primary(confirm==='reset'?'Restore sample dataset':'Confirm import',()=>{try{if(confirm==='reset'){repository.reset();setFeedback('Sample dataset restored.');}else{repository.import(preview,filename);setFeedback(`Imported ${preview.rows.length} items.`);}setSheets([]);setConfirm('');setError('');}catch(e){setError(e.message);setConfirm('');}})))));
   }
 
+  const legacyFeature=entity=>features[({products:'items',customers:'customers',suppliers:'suppliers',invoices:'sales-invoices',quotations:'quotes',purchases:'purchase-orders'})[entity]]||{entity,key:entity,label:entity,master:false};
+  const legacyCanEdit=(entity,row)=>canEdit(legacyFeature(entity),row);
+  function LegacyRowActions({entity,record,onEdit}) {
+    const {data,repository}=useDemo();
+    const [confirm,setConfirm]=useState(false);
+    const [error,setError]=useState('');
+    const feature=legacyFeature(entity),row=find(data,entity,record.id);
+    if(!row)return null;
+    const restore=isArchived(row);
+    const label=feature.master?'Archive record':'Remove draft';
+    const change=()=>{
+      try {if(restore)repository.restore(feature,row.id);else repository.archive(feature,row.id);}
+      catch(e){setError(e.message);setConfirm(false);}
+    };
+    return h('div',{className:'erp-actions',onClick:event=>event.stopPropagation()},
+      legacyCanEdit(entity,row)&&btn('Edit',onEdit,{'aria-label':`Edit ${numberOf(row)}`}),
+      restore&&btn('Restore',change,{'aria-label':`Restore ${numberOf(row)}`}),
+      !confirm&&canArchive(feature,row)&&btn(label,()=>setConfirm(true)),
+      confirm&&h(React.Fragment,null,btn('Cancel',()=>setConfirm(false)),btn('Confirm '+label.toLowerCase(),change)),flash(error));
+  }
+
   function Operations({featureKey}={}) {
     const {feature:routeKey}=useParams();
     const key=featureKey||routeKey;
@@ -500,5 +580,5 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     const alias=pathname.match(/^\/demo\/operations\/([^/]+)$/)?.[1];
     return features[direct||alias]?.label;
   };
-  return {Login,Operations,TopBar,SidebarFunctions,WorkspaceGrid,DashboardOverview,dashboardSnapshot,ContextActions,routeEntries,sidebarSections,titleFor};
+  return {Login,Operations,TopBar,SidebarFunctions,WorkspaceGrid,DashboardOverview,dashboardSnapshot,ContextActions,LegacyRowActions,legacyCanEdit,routeEntries,sidebarSections,titleFor};
 }

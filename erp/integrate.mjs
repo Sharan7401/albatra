@@ -40,6 +40,24 @@ patch('o.jsx(ti,{to:"/login",className:"h-8 px-3 rounded-lg border border-border
 patch('children:o.jsx(Mfe,{children:o.jsx($k,{})})','children:o.jsx($k,{})');
 patch('className:"mt-1 text-sm text-muted-foreground max-w-2xl",children:t})]}),r&&o.jsx("div",{className:"flex flex-wrap items-center gap-2",children:r})]})}function Lfe',
   'className:"mt-1 text-sm text-muted-foreground max-w-2xl",children:t}),o.jsx(erpUI.ContextActions,{})]}),r&&o.jsx("div",{className:"flex flex-wrap items-center gap-2",children:r})]})}function Lfe');
+const originalGridStart=code.indexOf('function WPe(');
+const originalGridEnd=code.indexOf('function BS(',originalGridStart);
+const originalGrid=code.slice(originalGridStart,originalGridEnd);
+const rowActionsStart=originalGrid.indexOf('render:k=>o.jsxs("div"');
+const rowActionsEnd=originalGrid.indexOf('}],[y,b,i])',rowActionsStart);
+const sampleActionStart=originalGrid.indexOf('children:[o.jsxs("button",{onClick:a');
+const sampleActionEnd=originalGrid.indexOf('b&&o.jsxs("button",{onClick:()=>d(!0)',sampleActionStart);
+patch(originalGrid,originalGrid
+  .replace('remove:i,reset:a','repository:erpRepository')
+  .replace('[s,l]=_.useState("")','[s,l]=_.useState(""),[archiveView,setArchiveView]=_.useState(!1)')
+  .replace('const k=s.trim().toLowerCase();return k?y.rows.filter(E=>(y.searchKeys||[]).some(T=>String(E[T]??"").toLowerCase().includes(k))):y.rows},[y,s])','const k=s.trim().toLowerCase(),rows=y.rows.filter(E=>!b||((E.status==="archived")===archiveView));return k?rows.filter(E=>(y.searchKeys||[]).some(T=>String(E[T]??"").toLowerCase().includes(k))):rows},[y,s,b,archiveView])')
+  .replace(originalGrid.slice(rowActionsStart,rowActionsEnd),'render:k=>o.jsx(erpUI.LegacyRowActions,{entity:y.kind,record:k,onEdit:()=>p(k)})')
+  .replace('[y,b,i]','[y,b]')
+  .replace(originalGrid.slice(sampleActionStart,sampleActionEnd),'children:[b&&o.jsx("button",{type:"button",onClick:()=>setArchiveView(!archiveView),className:"h-9 px-2.5 rounded-lg border border-border text-xs font-medium",children:archiveView?"Show active records":"Show archived"}),')
+  .replace('b?k=>p(k):void 0','b?k=>erpUI.legacyCanEdit(y.kind,k)&&p(k):void 0')
+  .replace('" Add ",b.noun','" New entry"'));
+patch('mv=e=>e.invoices.map(t=>','mv=e=>e.invoices.filter(t=>t.status!=="archived").map(t=>');
+patch('Rfe=e=>e.orders.filter(t=>!["draft","cancelled"].includes(t.status))','Rfe=e=>e.orders.filter(t=>!["draft","cancelled","archived"].includes(t.status))');
 patch('const t=mv(e).filter(n=>n.status!=="cancelled")','const t=mv(e).filter(n=>!["cancelled","draft"].includes(n.status))');
 patch('const t=mv(e).filter(x=>x.status!=="cancelled")','const t=mv(e).filter(x=>!["cancelled","draft"].includes(x.status))');
 patch('Tfe=e=>Math.max(0,Number(e.total||0)-Number(e.amount_paid||0))','Tfe=e=>Math.max(0,Number(e.total||0)-Number(e.amount_paid||0)-Number(e.credit_total||0))');

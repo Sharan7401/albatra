@@ -19,6 +19,9 @@ const numberField = {invoices:'invoice_number',quotations:'quote_number',purchas
 const dateField = {invoices:'invoice_date',quotations:'quote_date',purchases:'order_date',orders:'order_date'};
 const isDraft = row => !row?.status || ['draft','new','under_review','prepared','sent'].includes(row.status);
 const locked = row => !isDraft(row);
+export const isArchived=row=>row?.status==='archived';
+export const canEdit=(feature,row)=>Boolean(row&&!isArchived(row)&&(feature.master||!locked(row)));
+export const canArchive=(feature,row)=>Boolean(row&&!isArchived(row)&&(feature.master||!row.status||['draft','new'].includes(row.status)));
 const add = (state,entity,row) => { (state[entity] ??= []).unshift(row); };
 const linkNames = (state,row) => {
   for (const [table,key] of [['branches','branch'],['customers','customer'],['suppliers','supplier'],['products','product']]) {
@@ -29,7 +32,7 @@ const linkNames = (state,row) => {
 function allocate(state,entity) {
   const settings = state.settings;
   const settingKey = {invoices:'invoice',quotations:'quote',purchases:'purchase',orders:'order',customerPayments:'payment'}[entity];
-  const config = state.numbering.find(x=>x.document === entity);
+  const config = state.numbering.find(x=>x.document === entity&&!isArchived(x));
   const prefix = config?.prefix || settings[`${settingKey}_prefix`] || prefixes[entity] || entity.toUpperCase().slice(0,5);
   const numbers = (state[entity] || []).map(numberOf);
   let next = Math.max(1,asNumber(config?.next || settings[`next_${settingKey}`]));
@@ -51,7 +54,7 @@ function refreshProduct(state,productId) {
   }
 }
 function move(state,row,lines,branch,direction,kind) {
-  if (!find(state,'branches',branch) && branch !== 'IN-TRANSIT') fail('Select a valid branch.');
+  if ((!find(state,'branches',branch)||isArchived(find(state,'branches',branch))) && branch !== 'IN-TRANSIT') fail('Select a valid branch.');
   const quantities = new Map();
   for (const line of lines) quantities.set(line.product_id,(quantities.get(line.product_id)||0)+direction*line.quantity);
   for (const [product,qty] of quantities) {
@@ -65,7 +68,7 @@ function move(state,row,lines,branch,direction,kind) {
 }
 function sourceFor(state,row,entity,{looseBranch=false,party}={}) {
   const source = find(state,entity,row.source_id);
-  if (!source || ['cancelled','void'].includes(source.status)) fail('Select a valid source document.');
+  if (!source || ['cancelled','void','archived'].includes(source.status)) fail('Select a valid source document.');
   if (!looseBranch && source.branch_id && row.branch_id !== source.branch_id) fail('The branch must match the source.');
   if (party && source[party] && row[party] !== source[party]) fail('The account must match the source.');
   return source;
@@ -101,7 +104,7 @@ function invoice(state,row,{issueStock=true}={}) {
   const customer = find(state,'customers',row.customer_id);
   const credit = norm(customer?.classification) === 'credit';
   const limit = asNumber(customer?.credit_limit);
-  const open = state.invoices.filter(x=>x.id!==row.id && x.customer_id===row.customer_id && !['draft','cancelled'].includes(x.status)).reduce((s,x)=>s+invoiceBalance(x),0);
+  const open = state.invoices.filter(x=>x.id!==row.id && x.customer_id===row.customer_id && !['draft','cancelled','archived'].includes(x.status)).reduce((s,x)=>s+invoiceBalance(x),0);
   if (credit && limit > 0 && money(open+row.total)>limit) fail('This invoice exceeds the customer credit limit.');
   if (issueStock) move(state,row,row.items,row.branch_id,-1,'Sales issue');
   row.amount_paid=0;
@@ -229,6 +232,7 @@ function post(state,feature,row,action) {
     case 'supplierPayment': settle(state,row,'purchases','payment');break;
     case 'customerCredit': settle(state,row,'invoices','credit');break;
     case 'supplierDebit': settle(state,row,'purchases','credit');break;
+    case 'manualJournal': row.status='posted';return;
     case 'voucher': {
       const sourceType=feature.fields.find(x=>x.key==='source_id')?.type;
       if (sourceType && row.source_id) {
@@ -255,7 +259,7 @@ export function validate(state,feature,row) {
       row[f.key]=f.type==='money'?money(v):Number(v);
     }
     if (f.type==='email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) fail('Enter a valid email address.');
-    if (Array.isArray(state[f.type]) && v && !find(state,f.type,v)) fail(`Select a valid ${f.label.toLowerCase()}.`);
+    if (Array.isArray(state[f.type]) && v && (!find(state,f.type,v)||isArchived(find(state,f.type,v)))) fail(`Select an active ${f.label.toLowerCase()}.`);
   }
   if (feature.entity==='numbering'&&(!Number.isInteger(row.next)||row.next<1||!prefixes[row.document]&&!numberField[row.document]&&!entries.includes(row.document))) fail('Choose an existing document type and a positive sequence number.');
   if (feature.entity==='products'&&row.barcode&&state.products.some(x=>x.id!==row.id&&norm(x.barcode)===norm(row.barcode))) fail('This barcode is already assigned to another item.');
@@ -272,6 +276,17 @@ export function validate(state,feature,row) {
     if (asNumber(row.discount)>row.subtotal) fail('Discount cannot exceed the subtotal.');
     if (asNumber(row.discount)>asNumber(find(state,'roles',state.profile.role)?.discount_limit)) fail('The discount exceeds the current demo role limit.');
     row.total=money(row.subtotal-asNumber(row.discount));
+  }
+  if (feature.journal) {
+    if (!Array.isArray(row.lines) || row.lines.length<2) fail('Add at least two journal lines.');
+    row.lines=row.lines.map(line=>{
+      const account=find(state,'demoAccounts',line.account),debit=Number(line.debit||0),credit=Number(line.credit||0);
+      if(!account||isArchived(account)||!Number.isFinite(debit)||!Number.isFinite(credit)||debit<0||credit<0||(money(debit)>0)===(money(credit)>0)) fail('Each journal line needs an active account and either a debit or a credit.');
+      return {account:account.id,account_name:account.name,debit:money(debit),credit:money(credit)};
+    });
+    const debit=sum(row.lines,'debit'),credit=sum(row.lines,'credit');
+    if(debit!==credit) fail('Total debits must equal total credits.');
+    row.total=debit;
   }
   const uniqueness=({products:'sku',branches:'code',numbering:'document',demoUsers:'email',demoAccounts:'code'})[feature.entity] || (['categories','brands','units','paymentTypes','roles'].includes(feature.entity)?'name':null);
   if (uniqueness && row[uniqueness] && state[feature.entity].some(x=>x.id!==row.id&&norm(x[uniqueness])===norm(row[uniqueness]))) fail(`${uniqueness} is already in use.`);
@@ -481,14 +496,13 @@ export function createDemoRepository(original, imported, storage=globalThis.loca
         Object.assign(row,rest);
       } else Object.assign(row,patch);
     }),
-    remove:(entity,key)=>commit(s=>{s[entity]=s[entity].filter(x=>x.id!==key);}),
     updateSettings:patch=>commit(s=>Object.assign(s.settings,patch)),
     reset:()=>commit(initial,true),
     profile:patch=>commit(s=>Object.assign(s.profile,patch)),
     save:(feature,values,recordId)=>commit(s=>{
       const current=find(s,feature.entity,recordId);
       if(recordId&&!current) fail('Record no longer exists.');
-      if(current&&!feature.master&&locked(current)) fail('Only drafts can be changed.');
+      if(current&&!canEdit(feature,current)) fail('This record is locked.');
       const row=linkNames(s,{...current,...copy(values),id:current?.id||id()});
       if(!feature.master) {
         row.date ||= today();row.status ||= 'draft';row.variant ||= feature.variant || '';
@@ -501,6 +515,28 @@ export function createDemoRepository(original, imported, storage=globalThis.loca
       else add(s,feature.entity,row);
       audit(s,feature,row,current?'Edited':'Created');
       return row.id;
+    }),
+    archive:(feature,key)=>commit(s=>{
+      const row=find(s,feature.entity,key);
+      if(!canArchive(feature,row)) fail('Only active master records or unposted drafts can be archived.');
+      if(feature.entity==='products'&&(asNumber(row.reserved)>0||[...s.branches.map(b=>b.id),'IN-TRANSIT'].some(branch=>knownStock(s,key,branch)!==0))) fail('Clear the item’s stock and reservations before archiving it.');
+      if(feature.entity==='branches') {
+        if(s.branches.filter(branch=>!isArchived(branch)).length<2) fail('Keep at least one active branch.');
+        if(Object.entries(s).some(([entity,rows])=>entity!=='branches'&&Array.isArray(rows)&&rows.some(record=>!isArchived(record)&&(record.branch_id===key||record.to_branch_id===key)))||s.products.some(item=>knownStock(s,item.id,key)!==0)) fail('A branch with stock or linked records must stay active.');
+        if(s.profile.branch_id===key) s.profile.branch_id='all';
+      }
+      if(feature.entity==='roles'&&s.profile.role===key) fail('Choose another demo role before archiving this one.');
+      row.archived_from=row.status||null;
+      row.status='archived';
+      audit(s,feature,row,feature.master?'Archived':'Draft removed');
+    }),
+    restore:(feature,key)=>commit(s=>{
+      const row=find(s,feature.entity,key);
+      if(!isArchived(row)) fail('This record is not archived.');
+      if(row.archived_from) row.status=row.archived_from;
+      else delete row.status;
+      delete row.archived_from;
+      audit(s,feature,row,'Restored');
     }),
     action:(feature,key,action)=>commit(s=>{
       const row=find(s,feature.entity,key);
@@ -532,10 +568,11 @@ export function createDemoRepository(original, imported, storage=globalThis.loca
   return api;
 }
 export function dashboardSnapshot(state) {
-  const scope=state.branches.find(branch=>branch.id===state.profile?.branch_id)?.id;
-  const branches=scope?state.branches.filter(branch=>branch.id===scope):state.branches;
+  const activeBranches=state.branches.filter(branch=>!isArchived(branch));
+  const scope=activeBranches.find(branch=>branch.id===state.profile?.branch_id)?.id;
+  const branches=scope?activeBranches.filter(branch=>branch.id===scope):activeBranches;
   const products=state.products.filter(product=>product.status!=='archived');
-  const visible=row=>!scope||row.branch_id===scope;
+  const visible=row=>!isArchived(row)&&(!scope||row.branch_id===scope);
   const scoped={
     ...state,branches,products:products.map(product=>{
       const onHand=branches.reduce((quantity,branch)=>quantity+knownStock(state,product.id,branch.id),0);
