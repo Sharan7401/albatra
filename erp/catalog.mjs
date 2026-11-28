@@ -120,7 +120,19 @@ Object.assign(features,{
   accounts:{key:'accounts',label:'Chart of Accounts',group:'Finance',entity:'demoAccounts',master:true,fields:[field('code','Account code','text',true),name,field('account_type','Account type','Asset|Liability|Equity|Income|Expense',true),notes]},
   ledger:{key:'ledger',label:'General Ledger',group:'Finance',report:'journal'},
   financials:{key:'financials',label:'Financial Statements',group:'Finance',report:'financial'},
+  drivers:master('drivers','Drivers','drivers',[name,branch,field('phone','Phone'),field('licence_expiry','Licence expiry','date'),notes],{group:'People'}),
+  'bank-accounts':master('bank-accounts','Banks','bankAccounts',[name,field('bank_name','Bank','text',true),field('account_last_four','Account ending'),field('account_id','Ledger account','demoAccounts',true),notes],{group:'Banking'}),
+  'employee-documents':master('employee-documents','Documents','employeeDocuments',[name,field('employee_id','Employee','demoUsers',true),field('issue_date','Issued','date'),field('expiry_date','Expires','date'),notes],{group:'Human Resources'}),
+  'employee-assets':master('employee-assets','Assets','employeeAssets',[name,field('code','Asset tag','text',true),field('employee_id','Assigned to','demoUsers'),field('condition','Condition','Good|Needs repair|Retired',true),notes],{group:'Human Resources'}),
+  'supplier-bills':doc('supplier-bills','Bills','supplierBills',[branch,supplier,ref('purchases','Purchase order',false),field('external_number','Supplier invoice number','text',true),field('due_date','Due date','date',true),amount],{group:'Purchases',proposed:true}),
+  refunds:doc('refunds','Refunds','refundDrafts',[branch,customer,ref('customerPayments','Original receipt'),amount,method],{group:'Sales',proposed:true}),
+  'activity-logs':{...report('activity-logs','Activity Logs','history'),group:'Settings'},
+  'bank-reports':{...report('bank-reports','Bank Reports','banks'),group:'Reports and Analysis'},
+  'fiscal-periods':master('fiscal-periods','Fiscal Periods','fiscalPeriods',[name,field('start_date','Start date','date',true),field('end_date','End date','date',true),notes],{group:'Accounting',proposed:true}),
+  'online-customers':{...features.customers,key:'online-customers',label:'Online Customers',customerSegment:'online',group:'People'},
+  'b2b-customers':{...features.customers,key:'b2b-customers',label:'B2B Customers',customerSegment:'b2b',group:'People'},
 });
+features.customers.fields = [...features.customers.fields, field('customer_segment','Customer segment','retail|online|b2b')];
 export const extraLinks = [
   ['POS Terminal','pos'],['Sales Orders','orders'],['Notifications','notifications'],
   ['Sales Performance','performance'],['Procurement Insights','procurement'],['Chart of Accounts','accounts'],
