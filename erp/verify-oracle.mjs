@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {features,oracleMenu} from './catalog.mjs';
 import {createDemoRepository,pendingDeliveriesForYear,stockReceiptCosts,purchaseStatistics,knownStock} from './repository.mjs';
+import {dashboardPreferences,dashboardPresets,linkedWorkspaces,workspaceMenu} from './workspace-navigation.mjs';
 
 const menu = [
   [
@@ -224,3 +225,31 @@ assert.deepEqual(createDemoRepository(seed,{rows:[]},storage,{examples:true}).ge
 desk.reset();
 assert.equal(desk.get().stockReceipts.filter(x=>x.receipt_cost).length,2);
 console.log('41 menu mappings, demo records, valued receipts, posting guards, delivery backlog and shared Item Master passed.');
+assert.equal(workspaceMenu.length,46);
+assert.equal(new Set(workspaceMenu.map(({key})=>key)).size,46);
+const legacyRoutes=['dashboard','inventory','pos','notifications'];
+for(const {key} of workspaceMenu) assert(features[key]||Object.hasOwn(linkedWorkspaces,key)||['app-settings',...legacyRoutes].includes(key),key);
+for(const [preset,{widgets}] of Object.entries(dashboardPresets)) {
+  const layout=dashboardPreferences({dashboardLayout:{preset}});
+  assert.deepEqual(layout.order.filter(key=>!layout.hidden.includes(key)),widgets);
+}
+assert.equal(dashboardPreferences({dashboardLayout:{preset:'unknown'}}).preset,'owner');
+desk.profile({dashboardLayout:{preset:'shop',order:['shop','activity','unknown','shop'],hidden:['activity']}});
+const persisted=dashboardPreferences(createDemoRepository(seed,{rows:[]},storage,{examples:true}).get().profile);
+assert.deepEqual(persisted.order.slice(0,2),['shop','activity']);
+assert.deepEqual(persisted.hidden,['activity']);
+const onlineId=desk.save(features['online-customers'],{name:'Online test',classification:'Cash'});
+assert.equal(desk.get().customers.find(row=>row.id===onlineId).customer_segment,'online');
+const bank=features['bank-accounts'];
+const account=desk.get().demoAccounts[0].id;
+assert.throws(()=>desk.save(bank,{name:'Main bank',bank_name:'Demo Bank',account_last_four:'12345',account_id:account}),/last four/);
+const bankId=desk.save(bank,{name:'Main bank',bank_name:'Demo Bank',account_last_four:'0123',account_id:account});
+assert.equal(desk.get().bankAccounts.find(row=>row.id===bankId).account_last_four,'0123');
+const fiscal=features['fiscal-periods'];
+desk.save(fiscal,{name:'2027 January',start_date:'2027-01-01',end_date:'2027-01-31'});
+assert.throws(()=>desk.save(fiscal,{name:'Overlapping',start_date:'2027-01-31',end_date:'2027-02-28'}),/overlaps/);
+const draftBill=features['supplier-bills'];
+const billId=desk.save(draftBill,{branch_id:'a',supplier_id:desk.get().suppliers[0].id,external_number:'A123',due_date:'2027-01-15',amount:12});
+assert.equal(desk.get().supplierBills.find(row=>row.id===billId).status,'draft');
+assert.throws(()=>desk.action(draftBill,billId,'post'),/no longer available/);
+console.log('46 ERP entries, persisted dashboards, customer segments, bank account validation and draft controls passed.');
