@@ -43,7 +43,7 @@ function allocate(state,entity) {
   return `${prefix}-${String(next).padStart(5,'0')}`;
 }
 function audit(state,feature,row,event) {
-  add(state,'activity',{id:id(),date:today(),timestamp:new Date().toISOString(),name:numberOf(row),status:event,entity:feature.entity,feature:feature.key,product_id:row.product_id,branch_id:row.branch_id,customer_id:row.customer_id,supplier_id:row.supplier_id,items:row.items || [],notes:feature.label});
+  add(state,'activity',{id:id(),date:today(),timestamp:new Date().toISOString(),actor:state.profile.name,name:numberOf(row),status:event,entity:feature.entity,feature:feature.key,product_id:row.product_id,branch_id:row.branch_id,customer_id:row.customer_id,supplier_id:row.supplier_id,items:row.items || [],notes:feature.label});
 }
 const knownStock = (state,product,branch) => asNumber(state.stock[stockKey(product,branch)]);
 function refreshProduct(state,productId) {
@@ -341,6 +341,16 @@ export function validate(state,feature,row) {
   }
   if (feature.entity==='numbering'&&(!Number.isInteger(row.next)||row.next<1||!prefixes[row.document]&&!numberField[row.document]&&!entries.includes(row.document))) fail('Choose an existing document type and a positive sequence number.');
   if (feature.entity==='products'&&row.barcode&&state.products.some(x=>x.id!==row.id&&norm(x.barcode)===norm(row.barcode))) fail('This barcode is already assigned to another item.');
+  if (feature.entity==='fiscalPeriods') {
+    if(row.start_date>row.end_date) fail('End date must be on or after the start date.');
+    if((state.fiscalPeriods||[]).some(period=>period.id!==row.id&&!isArchived(period)&&period.start_date<=row.end_date&&period.end_date>=row.start_date)) fail('This period overlaps an existing period.');
+  }
+  if (feature.entity==='bankAccounts'&&row.account_last_four&&!/^\d{4}$/.test(row.account_last_four)) fail('Enter only the last four digits of the account.');
+  if (feature.entity==='refundDrafts') {
+    const receipt=find(state,'customerPayments',row.source_id);
+    if(!receipt||receipt.status!=='posted'||receipt.branch_id!==row.branch_id||receipt.customer_id!==row.customer_id) fail('Select a posted receipt for this customer and branch.');
+    if (asNumber(row.amount)>asNumber(receipt.amount)) fail('Amount cannot exceed the original receipt.');
+  }
   if (row.amount != null && asNumber(row.amount)<=0) fail('Amount must be greater than zero.');
   if (feature.lines) {
     if (!row.items?.length) fail('Add at least one item.');
@@ -633,6 +643,7 @@ export function createDemoRepository(original, imported, storage=globalThis.loca
       if(recordId&&!current) fail('Record no longer exists.');
       if(current&&!canEdit(feature,current)) fail('This record is locked.');
       const row=linkNames(s,{...current,...copy(values),id:current?.id||id()});
+      if(feature.customerSegment) row.customer_segment=feature.customerSegment;
       if(!feature.master) {
         row.date ||= today();row.status ||= 'draft';row.variant ||= feature.variant || '';
         row.number ||= current ? numberOf(current) : allocate(s,feature.entity);

@@ -14,7 +14,7 @@ const localPdfCondition = '["127.0.0.1","localhost"].includes(window.location.ho
 if (!code.includes(localPdfCondition)) throw new Error('Demo PDF isolation hook was not found.');
 writeFileSync(bundle, code.replace(localPdfCondition, 'true'));
 
-for (const file of ['app.mjs', 'catalog.mjs', 'import.mjs', 'repository.mjs', 'workspace.css']) {
+for (const file of ['app.mjs', 'catalog.mjs', 'import.mjs', 'repository.mjs', 'workspace-navigation.mjs', 'workspace.css']) {
   copyFileSync('erp/' + file, modules + '/' + file);
 }
 writeFileSync(modules + '/client-catalogue.mjs', 'export default [];\n');

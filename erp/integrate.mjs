@@ -17,7 +17,7 @@ patch(code.slice(start,end), 'const erpDemoRepository=erpStore(Xj);function Mfe(
 const sidebarNavStart=code.indexOf('o.jsx("nav",{className:"flex-1 overflow-y-auto px-3 py-4 space-y-5",children:c2.map(t=>o.jsxs',code.indexOf('function YM('));
 const sidebarNavEnd=code.indexOf(',o.jsxs("div",{className:"border-t border-sidebar-border',sidebarNavStart);
 if(sidebarNavStart<0||sidebarNavEnd<0||sidebarNavEnd>code.indexOf('function $fe()')) throw new Error('Demo sidebar not found.');
-patch(code.slice(sidebarNavStart,sidebarNavEnd),'o.jsx("nav",{className:"flex-1 overflow-y-auto px-3 py-4 space-y-2","aria-label":"Oracle main menu sidebar",children:o.jsx(erpUI.SidebarFunctions,{onNavigate:e})})');
+patch(code.slice(sidebarNavStart,sidebarNavEnd),'o.jsx("nav",{className:"flex-1 overflow-y-auto px-3 py-4 space-y-2","aria-label":"ERP module sidebar",children:o.jsx(erpUI.SidebarFunctions,{onNavigate:e})})');
 const shellStart=code.indexOf('function $fe()');
 const shellEnd=code.indexOf('function Et(',shellStart);
 const shell=code.slice(shellStart,shellEnd);
@@ -38,7 +38,7 @@ patch(dashboardCharts,dashboardCharts
   .replace('tick:LS,width:52','tick:LS,width:44,tickFormatter:value=>new Intl.NumberFormat("en",{notation:"compact",maximumFractionDigits:1}).format(value)'));
 const dashboardStart=code.indexOf('function RPe()');
 const dashboardEnd=code.indexOf('function Ai(',dashboardStart);
-patch(code.slice(dashboardStart,dashboardEnd),'function RPe(){const{data}=Ml(),snapshot=_.useMemo(()=>erpUI.dashboardSnapshot(data),[data]),view=_.useMemo(()=>eV(snapshot.data),[snapshot]);return o.jsxs("div",{className:"erp-dashboard",children:[o.jsx(erpUI.DashboardHero,{snapshot}),data.profile.navigation==="grid"&&o.jsx(erpUI.WorkspaceGrid,{}),o.jsx(erpUI.DashboardMetrics,{view}),o.jsx(APe,{view}),o.jsx(erpUI.DashboardOverview,{snapshot}),o.jsx(TPe,{view})]})}');
+patch(code.slice(dashboardStart,dashboardEnd),'function RPe(){const{data}=Ml(),snapshot=_.useMemo(()=>erpUI.dashboardSnapshot(data),[data]),view=_.useMemo(()=>eV(snapshot.data),[snapshot]);return o.jsxs("div",{className:"erp-dashboard",children:[o.jsx(erpUI.DashboardHero,{snapshot}),data.profile.navigation==="grid"&&o.jsx(erpUI.WorkspaceGrid,{}),o.jsxs(erpUI.DashboardLayout,{children:[o.jsx(erpUI.DashboardMetrics,{view}),o.jsx(APe,{view}),o.jsx(erpUI.DashboardOverview,{snapshot}),o.jsx(TPe,{view})]})]})}');
 patch('n.filter(x=>Number(x.available)<=Number(x.reorder_level))','n.filter(x=>Number(x.reorder_level)>0&&Number(x.available)<=Number(x.reorder_level))');
 patch('l=t.map(x=>x.invoice_date).filter(Boolean).sort().pop(),u=l?new Date(new Date(l).getTime()-6*864e5).toISOString().slice(0,10):"",d=$c(t.filter(x=>x.invoice_date>=u),x=>x.total)','l=ct(),u=new Date(new Date(l).getTime()-6*864e5).toISOString().slice(0,10),d=$c(t.filter(x=>x.invoice_date>=u&&x.invoice_date<=l),x=>x.total)');
 patch('const w={};e.purchases.filter(x=>x.status!=="cancelled")','const w={};e.purchases.filter(x=>!["cancelled","draft"].includes(x.status))');
