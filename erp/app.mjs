@@ -2,6 +2,7 @@ import {features,numberOf,oracleMenu} from './catalog.mjs';
 import {canArchive,canEdit,createDemoRepository,dashboardSnapshot,find,isArchived,historicalPrice,invoiceBalance,knownStock,permittedActions,purchaseBalance,purchaseLineProgress,purchaseStatistics,pendingDeliveriesForYear,stockReceiptCosts,today} from './repository.mjs';
 import {downloadCSV,mappingFields,previewWorkbook,readWorkbook,sheetHeaders} from './import.mjs';
 import clientSheets from './client-catalogue.mjs';
+import {dashboardPreferences,dashboardPresets,dashboardWidgets,linkedWorkspaces,workspaceMenu} from './workspace-navigation.mjs';
 
 export function createWorkspaceStore(seed) {
   const examples = seed();
@@ -13,14 +14,16 @@ const labelOf = (row,entity)=>entity==='products'?`${row.sku} · ${row.name}`:nu
 const entityDate = (row)=>row.date || row.invoice_date || row.order_date || row.quote_date || '';
 const searchText = value=>String(value??'').toLowerCase().trim();
 const aliases={customers:'customer-master',suppliers:'supplier-master',branches:'branch-master'};
-const routeEntries=Object.keys(features).filter(key=>key!=='settings').map(key=>[aliases[key]||key,key]);
+const workspaceLabels=new Map(workspaceMenu.map(entry=>[entry.key,entry]));
+const customScreens=['app-settings',...Object.keys(linkedWorkspaces)];
+const routeEntries=[...Object.keys(features).filter(key=>key!=='settings'),...customScreens].map(key=>[aliases[key]||key,key]);
 const routeFor=key=>`/demo/${aliases[key]||key}`;
 const menuGroups = new Map();
-for(const entry of oracleMenu) {
+for(const entry of workspaceMenu) {
   if(!menuGroups.has(entry.group)) menuGroups.set(entry.group,[]);
   menuGroups.get(entry.group).push(entry);
 }
-const menuIcons={Inventory:'Boxes',Warehouse:'Truck',Sales:'FileText',Quotations:'ClipboardList',Purchases:'ShoppingCart',Customers:'Users',Suppliers:'Truck',Finance:'CreditCard'};
+const menuIcons={Dashboard:'Boxes',Inventory:'Boxes',Sales:'FileText',Purchases:'ShoppingCart',Banking:'CreditCard',Accounting:'ClipboardList',People:'Users','Human Resources':'Users','Reports and Analysis':'TrendingUp',Settings:'FileText'};
 const related={
   '/demo/products':['items','prices','costs','import'],
   '/demo/items':['import'],
@@ -33,6 +36,9 @@ const related={
   '/demo/suppliers':['suppliers','supplier-transactions','supplier-payment-vouchers'],
   '/demo/reports':['branch-stock','customer-outstanding','supplier-outstanding','financials'],
   '/demo/settings':['users','roles','numbering','import'],
+  '/demo/users':['roles'],
+  '/demo/stock-receipts':['purchase-receipts'],
+  '/demo/transfers':['transfer-receipts'],
 };
 const entrySources={
   stock:['stock-receipts','New stock receipt'],
@@ -54,6 +60,7 @@ const entrySources={
 const ordinaryColumns=[['number','Record'],['name','Name / description'],['account','Account / location'],['date','Date'],['status','Status'],['total','Total / qty']];
 const itemColumns=[['number','Item code'],['name','Item description'],['manufacturer','Manufacturer part #'],['classification','Category / brand'],['status','Status'],['quantity','On hand']];
 function recordColumns(feature) {
+  if(feature.key==='activity-logs')return [['number','Record'],['actor','Actor'],['account','Branch'],['date','Timestamp'],['status','Action']];
   if(feature.entity==='products')return itemColumns;
   if(feature.report==='stock'||feature.report==='movements')return [['number','Reference'],['name','Item'],['account','Branch'],['date','Date'],['status','Status'],['total','Quantity']];
   const fieldLabel={invoices:'Customer',quotations:'Customer',purchases:'Supplier',purchaseQuotes:'Supplier',purchaseReceipts:'Supplier',purchaseReturns:'Supplier',transfers:'From → to',transferReceipts:'Receiving branch',deliveries:'Customer'}[feature.entity];
@@ -162,7 +169,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
     },[]);
     const q=searchText(query);
-    const modules=q?oracleMenu.filter(x=>searchText(`${x.group} ${x.label} ${features[x.key].label}`).includes(q)).slice(0,7):[];
+    const modules=q?[...workspaceMenu,...oracleMenu.filter(x=>!workspaceLabels.has(x.key))].filter(x=>searchText(`${x.group} ${x.label} ${features[x.key]?.label||''}`).includes(q)).slice(0,7):[];
     const items=q?data.products.filter(x=>searchText(`${x.sku} ${x.part_number} ${x.name} ${x.description_ar}`).includes(q)).slice(0,6):[];
     const first=modules[0]?routeFor(modules[0].key):items[0]?`${routeFor('items')}?record=${encodeURIComponent(items[0].id)}`:'';
     return h('div',{className:'erp-top'},
@@ -197,24 +204,120 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
   }
   function WorkspaceGrid({onNavigate}) {
     const {pathname}=useLocation();
-    return h('nav',{'aria-label':'Oracle main menu grid',className:'erp-workspace-grid'},
+    return h('nav',{'aria-label':'ERP module grid',className:'erp-workspace-grid'},
       !onNavigate&&h('h2',{className:'font-heading text-sm font-bold'},'Main Menu'),
-      h('div',{className:'erp-tiles'},oracleMenu.map(entry=>{
+      h('div',{className:'erp-tiles'},workspaceMenu.map(entry=>{
         const href=routeFor(entry.key);
         const Icon=Icons[menuIcons[entry.group]]||Icons.FileText;
         return h(Link,{key:entry.key,to:href,onClick:onNavigate,className:'erp-tile','aria-current':pathname===href?'page':undefined},
           h('span',{className:'erp-tile-icon'},h(Icon,{'aria-hidden':true})),h('span',null,entry.label),h('span',{className:'erp-tile-arrow','aria-hidden':true},'↗'));
       })));
   }
+  function DashboardLayout({children}) {
+    const {data}=useDemo();
+    const preferences=dashboardPreferences(data.profile);
+    const [metrics,performance,branches,activity]=children;
+    const shortcuts=(heading,keys)=>panel(h(React.Fragment,null,h('h2',null,heading),
+      h('div',{className:'erp-actions'},keys.map(key=>link(workspaceLabels.get(key).label,routeFor(key),{key})))));
+    const widgets={metrics,performance,branches,activity,
+      accounting:shortcuts('Accounting shortcuts',['ledger','customer-receipt-vouchers','supplier-payments','journal-entries']),
+      shop:shortcuts('Shop shortcuts',['pos','quotes','stock-receipts','transfers'])};
+    const visible=preferences.order.filter(key=>!preferences.hidden.includes(key));
+    return visible.length
+      ? visible.map(key=>h(React.Fragment,{key},widgets[key]))
+      : panel(link('Choose dashboard widgets',routeFor('app-settings')));
+  }
   function DashboardHero({snapshot}) {
+    const {data}=useDemo();
+    const {preset}=dashboardPreferences(data.profile);
     const scope=snapshot.scope?snapshot.branches[0]?.name:'All branches';
     return h('header',{className:'erp-dashboard-hero'},
       h('div',{className:'erp-hero-copy'},
         h('p',{className:'erp-hero-scope'},h('span',{'aria-hidden':true}),scope),
-        h('h1',null,'Executive Dashboard')),
+        h('h1',null,`${dashboardPresets[preset].label} Dashboard`)),
       h('div',{className:'erp-hero-actions'},
+        link('Customize dashboard',routeFor('app-settings'),{className:'erp-button erp-hero-secondary'}),
         link('Sales invoices',routeFor('sales-invoices'),{className:'erp-button erp-hero-secondary'}),
         link('New quotation',routeFor('quotes')+'?new=1',{className:'erp-button erp-primary'})));
+  }
+
+  function AppSettings() {
+    const {data,repository}=useDemo();
+    const preferences=dashboardPreferences(data.profile);
+    const {preset,order,hidden}=preferences;
+    const [message,setMessage]=useState(null);
+    const save=patch=>{
+      try {repository.profile(patch);setMessage({text:'Preferences saved.',error:false});}
+      catch(error) {setMessage({text:error.message,error:true});}
+    };
+    const move=(index,direction)=>{
+      const next=[...order];
+      [next[index],next[index+direction]]=[next[index+direction],next[index]];
+      save({dashboardLayout:{...preferences,order:next}});
+    };
+    return h('div',{className:'erp-space erp-preferences'},
+      title('App Settings','Personalize your navigation and dashboard.',link('View dashboard',routeFor('dashboard')),'Settings'),
+      message&&flash(message.text,message.error),
+      panel(h(React.Fragment,null,h('h2',null,'Navigation and dashboard'),
+        h('div',{className:'erp-preference-options'},
+          h('label',{className:'erp-field'},'Navigation layout',
+            h('select',{value:data.profile.navigation||'sidebar',onChange:event=>save({navigation:event.target.value})},
+              h('option',{value:'sidebar'},'Sidebar'),h('option',{value:'grid'},'Grid'))),
+          h('label',{className:'erp-field'},'Dashboard preset',
+            h('select',{value:preset,onChange:event=>save({dashboardLayout:{preset:event.target.value}})},
+              Object.entries(dashboardPresets).map(([value,{label}])=>h('option',{key:value,value},label))))))),
+      panel(h(React.Fragment,null,
+        h('div',{className:'erp-toolbar'},h('h2',null,'Dashboard widgets'),btn('Reset preset',()=>save({dashboardLayout:{preset}}))),
+        h('ul',{className:'erp-widget-list'},order.map((key,index)=>h('li',{key},
+          h('label',null,h('input',{type:'checkbox',checked:!hidden.includes(key),onChange:event=>save({dashboardLayout:{...preferences,hidden:event.target.checked?hidden.filter(value=>value!==key):[...hidden,key]}})}),dashboardWidgets[key]),
+          h('span',{className:'erp-actions'},
+            btn('↑',()=>move(index,-1),{disabled:index===0,'aria-label':`Move ${dashboardWidgets[key]} up`}),
+            btn('↓',()=>move(index,1),{disabled:index===order.length-1,'aria-label':`Move ${dashboardWidgets[key]} down` })))))))
+    );
+  }
+
+  function LinkedWorkspace({screen}) {
+    const entry=workspaceLabels.get(screen);
+    const destinations=linkedWorkspaces[screen]||[];
+    return h('div',{className:'erp-space'},
+      title(entry.label,screen==='general-reports'?undefined:'This workflow is pending implementation in the demo.',null,entry.group),
+      destinations.length>0&&panel(h(React.Fragment,null,h('h2',null,'Available workspaces'),
+        h('div',{className:'erp-actions'},destinations.map(([label,key])=>link(label,routeFor(key),{key}))))));
+  }
+
+  function PrintPreferences({templates=false}) {
+    const {data,repository}=useDemo();
+    const options=data.settings.erpPrint||{};
+    const [kind,setKind]=useState('sales-invoices');
+    const template=options.templates?.[kind]||{};
+    const [message,setMessage]=useState(null);
+    const [draft,setDraft]=useState(null);
+    const current=draft||(templates?template:options);
+    const edit=(key,value)=>setDraft({...current,[key]:value});
+    const save=event=>{
+      event.preventDefault();
+      try {
+        repository.updateSettings({erpPrint:templates?{...options,templates:{...options.templates,[kind]:current}}:{...options,...current}});
+        setDraft(null);
+        setMessage({text:'Print preferences saved.',error:false});
+      } catch(error) {setMessage({text:error.message,error:true});}
+    };
+    const paper=['A4','Letter'].includes(current.paper)?current.paper:'A4';
+    return h('div',{className:'erp-space erp-preferences'},
+      title(templates?'Document Templates':'Print Settings',undefined,undefined,'Settings'),
+      message&&flash(message.text,message.error),
+      panel(h('form',{className:'erp-space',onSubmit:save},
+        templates?h(React.Fragment,null,
+          h('label',{className:'erp-field'},'Document type',
+            h('select',{value:kind,onChange:event=>{setKind(event.target.value);setDraft(null);setMessage(null);}},
+              ['sales-invoices','quotes','deliveries','purchase-orders','transfers'].map(key=>h('option',{key,value:key},workspaceLabels.get(key).label)))),
+          h('label',{className:'erp-field'},'Heading',h('input',{value:current.heading||'',maxLength:100,onChange:event=>edit('heading',event.target.value),placeholder:workspaceLabels.get(kind).label})),
+          h('label',{className:'erp-field'},'Footer',h('textarea',{value:current.footer||'',maxLength:250,onChange:event=>edit('footer',event.target.value)})))
+        :h(React.Fragment,null,
+          h('label',{className:'erp-field'},'Paper size',h('select',{value:paper,onChange:event=>edit('paper',event.target.value)},h('option',null,'A4'),h('option',null,'Letter'))),
+          h('label',null,h('input',{type:'checkbox',checked:current.remarks!==false,onChange:event=>edit('remarks',event.target.checked)}),' Include remarks'),
+          h('label',null,h('input',{type:'checkbox',checked:current.barcode!==false,onChange:event=>edit('barcode',event.target.checked)}),' Include barcode')),
+        h('div',{className:'erp-actions'},h('button',{type:'submit',className:'erp-button erp-primary'},'Save settings'),link('Open a document for print preview',routeFor(kind))))));
   }
 
   function DashboardMetrics({view}) {
@@ -339,19 +442,24 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
 
   function PrintView({feature,row,state,onClose}) {
     const tech=feature.key==='transfers'||feature.key.includes('transfer-receipts');
+    const preferences=state.settings.erpPrint||{};
+    const template=preferences.templates?.[feature.key]||{};
+    const paper=preferences.paper==='Letter'?'Letter':'A4';
     return h(Modal,{heading:'Print preview',onClose,print:true},
       h('div',{className:'erp-dialog-body erp-space'},
         h('div',{className:'erp-toolbar erp-noprint'},h('span',null,'Print or choose Save as PDF.'),primary('Print / Save PDF',()=>window.print())),
+        h('style',null,`@page { size: ${paper}; }`),
         h('article',{className:'erp-print-sheet'},
           h('div',{className:'erp-toolbar'},h('div',null,h('h2',null,state.settings.company_name||'Al Batra Auto Spare Parts'),h('p',{lang:'ar',dir:'rtl'},state.settings.company_name_ar||'البتراء لقطع غيار السيارات')),h('strong',null,'DEMO')),
-          h('h3',null,tech?'Material Transfer Note':feature.label),
+          h('h3',null,template.heading||(tech?'Material Transfer Note':feature.label)),
           tech&&h('p',{lang:'ar',dir:'rtl'},'إشعار تحويل المواد'),
-          h('dl',{className:'erp-details'},['Document',numberOf(row),'Date',entityDate(row),'Branch',branchName(state,row.branch_id),'Account',row.customer_name||row.supplier_name||row.recipient,'Destination',row.to_branch_id&&branchName(state,row.to_branch_id),'Remarks',row.notes].reduce((acc,value,i,all)=>i%2===0&&all[i+1]?[...acc,h('div',{key:value},h('dt',null,value),h('dd',null,all[i+1]))]:acc,[])),
+          h('dl',{className:'erp-details'},['Document',numberOf(row),'Date',entityDate(row),'Branch',branchName(state,row.branch_id),'Account',row.customer_name||row.supplier_name||row.recipient,'Destination',row.to_branch_id&&branchName(state,row.to_branch_id),'Remarks',preferences.remarks!==false&&row.notes].reduce((acc,value,i,all)=>i%2===0&&all[i+1]?[...acc,h('div',{key:value},h('dt',null,value),h('dd',null,all[i+1]))]:acc,[])),
           row.items?.length>0&&h('table',null,h('thead',null,h('tr',null,['Item / الصنف','Quantity / الكمية',row.receipt_cost?'Acquisition unit cost':'Unit price','Total'].map(cell=>h('th',{key:cell},cell)))),h('tbody',null,row.items.map((x,i)=>h('tr',{key:i},h('td',null,`${x.sku||''} ${x.name||''}`),h('td',null,x.quantity),h('td',null,money(row.receipt_cost?x.unit_cost:x.unit_price,state.settings.currency)),h('td',null,money(x.total,state.settings.currency)))))),
           row.lines?.length>0&&h('ul',{className:'erp-item-detail'},row.lines.map((x,i)=>h('li',{key:i},`${x.account} ${x.account_name} · Debit ${money(x.debit)} · Credit ${money(x.credit)}`))),
           row.receipt_cost==='percentage'&&h('p',null,`Base ${money(row.subtotal,state.settings.currency)} · ${row.cost_percent}% landed-cost charge ${money(row.surcharge_total,state.settings.currency)}`),
           (row.total!=null||row.amount!=null)&&h('p',{className:'erp-total'},`Total ${money(row.total??row.amount,state.settings.currency)}`),
-          row.barcode&&h(Barcode,{value:row.barcode}),
+          preferences.barcode!==false&&row.barcode&&h(Barcode,{value:row.barcode}),
+          template.footer&&h('p',{className:'erp-print-foot'},template.footer),
           h('p',{className:'erp-print-foot'},'Al Batra · Demonstration document'))));
   }
   function Detail({feature,state,row,repository,close,edit,print,onChanged}) {
@@ -404,6 +512,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
 
   function matchedRows(state,feature) {
     return (state[feature.entity]||[]).filter(row=>{
+      if(feature.customerSegment&&row.customer_segment!==feature.customerSegment)return false;
       if(feature.remarks&&!String(row.notes||row.remarks||'').trim())return false;
       if(feature.variant && (row.variant|| (row.source_id?'linked':'general'))!==feature.variant)return false;
       if(feature.show==='work'&&['cancelled','received','converted'].includes(row.status))return false;
@@ -413,6 +522,7 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
     });
   }
   function toRow(state,row,entity) {
+    if(entity==='activity')return {id:row.id,record:row,number:numberOf(row),name:row.name,actor:row.actor||'—',account:row.branch_id?branchName(state,row.branch_id):'—',branch_id:row.branch_id,date:row.timestamp||row.date,status:displayStatus(row.status),entity};
     return {id:row.id,record:row,number:numberOf(row),name:row.product_name||row.name||row.notes||row.recipient||row.account||'',account:row.customer_name||row.supplier_name||find(state,'customers',row.customer_id)?.name||find(state,'suppliers',row.supplier_id)?.name||find(state,'products',row.product_id)?.name||(row.branch_id?branchName(state,row.branch_id):row.city||row.description_ar||''),branch_id:row.branch_id,date:entityDate(row),status:displayStatus(row.status||'active'),total:row.total??row.amount??row.selling_price??row.quantity??'',entity};
   }
   function reportRows(state,mode,selectedBranch='all') {
@@ -429,6 +539,13 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       case 'stock':return stock();
       case 'movements':return view(state.movements,'movements');
       case 'journal':return view(posted(state.journal),'journal');
+      case 'banks': {
+        const bankAccounts=new Set((state.bankAccounts||[]).filter(bank=>!isArchived(bank)).map(bank=>bank.account_id));
+        return scopedPosted(state.journal).flatMap(entry=>(entry.lines||[]).flatMap((line,index)=>{
+          if(!bankAccounts.has(line.account))return [];
+          return [{...toRow(state,entry,'journal'),id:entry.id+'|'+index,account:line.account_name,total:line.debit-line.credit}];
+        }));
+      }
       case 'supersessions':return view(state.products.filter(x=>x.supersede_id||x.supersede_number),'products').map(x=>({...x,total:numberOf(find(state,'products',x.record.supersede_id))||x.record.supersede_number,status:'Superseded'}));
       case 'sales':return priced(invoices,'invoices');
       case 'purchases':return priced(purchases,'purchases');
@@ -452,6 +569,39 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
       case 'invoicedDeliveries':return view(state.deliveries.filter(x=>x.status==='invoiced'),'deliveries');
       default:return history();
     }
+  }
+  function CustomReports() {
+    const sources={sales:'Sales',stock:'Inventory',journal:'General ledger',history:'Activity'};
+    const {data,repository}=useDemo();
+    const saved=data.profile.customReport||{};
+    const [mode,setMode]=useState(Object.hasOwn(sources,saved.mode)?saved.mode:'sales');
+    const [query,setQuery]=useState(saved.query||'');
+    const [selected,setSelected]=useState(()=>ordinaryColumns.map(([key])=>key).filter(key=>!Array.isArray(saved.columns)||saved.columns.includes(key)));
+    const [message,setMessage]=useState(null);
+    const columns=ordinaryColumns.filter(([key])=>selected.includes(key));
+    const scope=data.profile.branch_id||'all';
+    const rows=useMemo(()=>reportRows(data,mode,scope).filter(row=>
+      (scope==='all'||row.branch_id===scope)&&(!query||ordinaryColumns.some(([key])=>searchText(row[key]).includes(searchText(query))))),
+    [data,mode,scope,query]);
+    const save=()=>{
+      try {repository.profile({customReport:{mode,query,columns:selected}});setMessage({text:'Report saved.',error:false});}
+      catch(error) {setMessage({text:error.message,error:true});}
+    };
+    const csv=()=>downloadCSV(mode+'-custom-report.csv',[columns.map(([,label])=>label),...rows.map(row=>columns.map(([key])=>row[key]))]);
+    const filters=panel(h(React.Fragment,null,h('div',{className:'erp-preference-options'},
+      h('label',{className:'erp-field'},'Data source',h('select',{value:mode,onChange:event=>setMode(event.target.value)},Object.entries(sources).map(([key,label])=>h('option',{key,value:key},label)))),
+      h('label',{className:'erp-field'},'Search results',h('input',{value:query,onChange:event=>setQuery(event.target.value)}))),
+      h('fieldset',{className:'erp-actions'},h('legend',null,'Columns'),ordinaryColumns.map(([key,label])=>h('label',{key},
+        h('input',{type:'checkbox',checked:selected.includes(key),onChange:event=>setSelected(event.target.checked?[...selected,key]:selected.filter(value=>value!==key))}),' '+label)))));
+    const previewRows=rows.slice(0,25).map(row=>h('tr',{key:row.id},columns.map(([key])=>h('td',{key},row[key]??''))));
+    const preview=h('div',{className:'erp-table-wrap'},h('table',{className:'erp-table'},
+      h('caption',null,`Showing ${previewRows.length} of ${rows.length} records`),
+      h('thead',null,h('tr',null,columns.map(([key,label])=>h('th',{key,scope:'col'},label)))),
+      h('tbody',null,previewRows)));
+    return h('div',{className:'erp-space'},
+      title('Custom Reports','Use the workspace branch to filter results.',h('div',{className:'erp-actions'},btn('Save report',save,{disabled:!columns.length}),btn('Export CSV',csv,{disabled:!columns.length||!rows.length})),'Reports and Analysis'),
+      message&&flash(message.text,message.error),
+      filters,columns.length>0&&preview);
   }
   const asPositive=value=>Number(value)||0;
   const moneyContext=(feature,row)=>row.entity!=='movements'&&row.entity!=='products'&&row.entity!=='activity'&&row.entity!=='branches'&&typeof row.total==='number'&&feature.report!=='stock';
@@ -629,18 +779,26 @@ export function makeERPComponents({React,Link,useLocation,useNavigate,useParams,
   function Operations({featureKey}={}) {
     const {feature:routeKey}=useParams();
     const key=featureKey||routeKey;
-    const feature=features[key];
+    const catalogFeature=features[key];
+    const display=workspaceLabels.get(key);
+    const feature=useMemo(()=>catalogFeature&&display?{...catalogFeature,label:display.label,group:display.group}:catalogFeature,[catalogFeature,display]);
     const navigate=useNavigate();
     useEffect(()=>{if(feature?.special==='settings')navigate('/demo/settings',{replace:true});},[feature,navigate]);
+    if(key==='app-settings')return h(AppSettings);
+    if(key==='print-settings'||key==='document-templates')return h(PrintPreferences,{key,templates:key==='document-templates'});
+    if(key==='custom-reports')return h(CustomReports);
+    if(customScreens.includes(key))return h(LinkedWorkspace,{screen:key});
     if(!feature)return h('div',{className:'erp-space'},title('Function unavailable','Choose a function from the workspace navigation.'),link('Return to Dashboard','/demo'));
     if(feature.special==='settings')return null;
     if(feature.special==='import')return h(ImportScreen);
     return h(Records,{key,feature});
   }
   const titleFor=pathname=>{
+    const workspace=workspaceMenu.find(entry=>routeFor(entry.key)===pathname);
+    if(workspace)return workspace.label;
     const direct=routeEntries.find(([path])=>pathname===`/demo/${path}`)?.[1];
     const alias=pathname.match(/^\/demo\/operations\/([^/]+)$/)?.[1];
-    return features[direct||alias]?.label;
+    return workspaceLabels.get(direct||alias)?.label||features[direct||alias]?.label;
   };
-  return {Login,Operations,TopBar,SidebarFunctions,WorkspaceGrid,DashboardHero,DashboardMetrics,DashboardOverview,dashboardSnapshot,ContextActions,LegacyRowActions,legacyCanEdit,routeEntries,titleFor};
+  return {Login,Operations,TopBar,SidebarFunctions,WorkspaceGrid,DashboardHero,DashboardLayout,DashboardMetrics,DashboardOverview,dashboardSnapshot,ContextActions,LegacyRowActions,legacyCanEdit,routeEntries,titleFor};
 }
